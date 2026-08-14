@@ -140,9 +140,14 @@ export async function refreshCachedRate(): Promise<RateResult> {
   const supabase = createServiceClient();
 
   if (!result.ok) {
+    // last_attempt_at is stamped here too, so pressing Refresh now shows up on
+    // the admin screen the same way an automatic attempt does.
     await supabase
       .from('fx_rate_cache')
-      .update({ last_error: result.message ?? 'Unknown error' })
+      .update({
+        last_error: result.message ?? 'Unknown error',
+        last_attempt_at: new Date().toISOString(),
+      })
       .eq('id', true);
     return result;
   }
@@ -153,6 +158,7 @@ export async function refreshCachedRate(): Promise<RateResult> {
       cad_per_usdc: result.rate,
       source: result.source,
       fetched_at: new Date().toISOString(),
+      last_attempt_at: new Date().toISOString(),
       last_error: '',
     })
     .eq('id', true);
@@ -175,9 +181,9 @@ export async function refreshCachedRate(): Promise<RateResult> {
  * afternoon.
  */
 export async function ensureRateFresh(): Promise<void> {
-  try {
-    const supabase = createServiceClient();
+  const supabase = createServiceClient();
 
+  try {
     const { data: stale } = await supabase.rpc('rate_needs_refresh');
     if (stale !== true) return;
 
@@ -190,10 +196,21 @@ export async function ensureRateFresh(): Promise<void> {
     if (claimed !== true) return;
 
     await refreshCachedRate();
-  } catch {
-    // Swallowed on purpose. This runs in the background of a page render and
-    // its failure is already recorded in fx_rate_cache.last_error for the admin
-    // screen; surfacing it here would break a page for a customer who does not
-    // care about the exchange rate.
+  } catch (error) {
+    // Recorded, not swallowed. An earlier version discarded this, which meant a
+    // background refresh that died produced a "last checked" time, no rate, and
+    // no explanation anywhere — the most confusing possible combination. The
+    // shop still must not break over a currency API, so the error is written to
+    // the admin screen rather than thrown.
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    try {
+      await supabase
+        .from('fx_rate_cache')
+        .update({ last_error: `Background refresh failed: ${message}` })
+        .eq('id', true);
+    } catch {
+      // Nothing left to do: the database itself is unreachable, which the shop
+      // will be reporting far more loudly elsewhere.
+    }
   }
 }
