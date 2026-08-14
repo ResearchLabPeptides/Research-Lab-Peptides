@@ -272,15 +272,43 @@ export async function saveUsdcSettings(input: unknown): Promise<ActionResult> {
   return { ok: true, message: 'Saved.' };
 }
 
-/**
- * Sets the rate by hand.
- *
- * A way through when no rate service is reachable — a shop should not be unable
- * to take payment because a third party is down or is blocking the datacentre
- * this runs in. The figure is sanity-checked exactly as a fetched one is, and
- * the source is recorded as manual so the admin screen can say so rather than
- * implying a live rate.
- */
+export async function refreshRateNow(): Promise<ActionResult> {
+  await requireStaff('manager');
+
+  const { fetchUsdcCadRate } = await import('@/lib/fx');
+  const supabase = await createClient();
+
+  // Counted, not refused. A person asking for a rate should always get one.
+  await supabase.rpc('record_rate_call');
+
+  const result = await fetchUsdcCadRate();
+
+  // Saved through the same security definer function the automatic path uses,
+  // so a misconfigured service role key cannot make this fail silently.
+  const { error } = await supabase.rpc('save_fx_rate', {
+    p_rate: result.ok ? result.rate : null,
+    p_source: result.source ?? '',
+    p_error: result.ok ? '' : (result.message ?? 'Unknown error'),
+  });
+
+  revalidatePath('/admin/payments');
+  revalidatePath('/');
+
+  if (error) {
+    return { ok: false, message: `Could not save the result: ${error.message}` };
+  }
+
+  if (!result.ok) {
+    return { ok: false, message: result.message ?? 'Could not reach the rate service.' };
+  }
+
+  return {
+    ok: true,
+    message: `Rate updated: 1 USDC = ${result.rate?.toFixed(4)} CAD, from ${result.source}.`,
+  };
+}
+
+/** Sets the rate by hand when no service is reachable. */
 export async function setRateManually(input: string): Promise<ActionResult> {
   await requireStaff('manager');
 
@@ -290,107 +318,26 @@ export async function setRateManually(input: string): Promise<ActionResult> {
     return { ok: false, message: 'Enter the rate as a number, for example 1.37.' };
   }
 
-  // Same band the automatic path uses. A typo here would misprice every USDC
-  // order until someone noticed.
-  if (rate < 0.8 || rate > 3) {
-    return {
-      ok: false,
-      message: `${rate} CAD per USDC is outside the plausible range. Check the figure.`,
-    };
-  }
-
   const supabase = await createClient();
-  const { error } = await supabase
-    .from('fx_rate_cache')
-    .update({
-      cad_per_usdc: rate,
-      source: 'set by hand',
-      fetched_at: new Date().toISOString(),
-      last_error: '',
-    })
-    .eq('id', true);
+  const { data, error } = await supabase.rpc('save_fx_rate', {
+    p_rate: rate,
+    p_source: 'set by hand',
+    p_error: '',
+  });
 
-  if (error) {
-    return { ok: false, message: `Could not save the rate: ${error.message}` };
+  if (error) return { ok: false, message: `Could not save the rate: ${error.message}` };
+
+  // save_fx_rate refuses an implausible figure rather than trusting the caller,
+  // so its answer is reported instead of assuming the write took.
+  const saved = (data as { ok?: boolean } | null)?.ok === true;
+  if (!saved) {
+    return { ok: false, message: `${rate} CAD per USDC is outside the plausible range.` };
   }
 
   revalidatePath('/admin/payments');
   revalidatePath('/');
 
   return { ok: true, message: `Rate set to 1 USDC = ${rate.toFixed(4)} CAD.` };
-}
-
-/**
- * Manual rate refresh.
- *
- * Runs on the staff member's own session rather than the service role. That is
- * deliberate: it means a missing or wrong SUPABASE_SERVICE_ROLE_KEY shows up
- * here as a permission error naming the table, instead of a write that fails
- * silently and leaves the screen saying "no rate yet" with nothing to explain
- * why.
- */
-export async function refreshRateNow(): Promise<ActionResult> {
-  await requireStaff('manager');
-
-  const { fetchUsdcCadRate } = await import('@/lib/fx');
-
-  const supabase = await createClient();
-
-  // Counted, not refused. A person asking for a rate should always get one —
-  // being unable to price an order because a counter said no would be a worse
-  // failure than one extra call. Counting it makes the automatic refreshes back
-  // off for the rest of the day, so the total stays near the ceiling anyway.
-  await supabase.rpc('record_rate_call');
-
-  const result = await fetchUsdcCadRate();
-
-  if (!result.ok) {
-    // The failure is recorded as well as returned, so it is still on the admin
-    // screen after the toast has gone.
-    const { error: writeError } = await supabase
-      .from('fx_rate_cache')
-      .update({
-        last_error: result.message ?? 'Unknown error',
-        last_attempt_at: new Date().toISOString(),
-      })
-      .eq('id', true);
-
-    revalidatePath('/admin/payments');
-
-    if (writeError) {
-      return {
-        ok: false,
-        message: `Could not save the result: ${writeError.message}. The rate service said: ${result.message}`,
-      };
-    }
-
-    return { ok: false, message: result.message ?? 'Could not reach the rate service.' };
-  }
-
-  const { error } = await supabase
-    .from('fx_rate_cache')
-    .update({
-      cad_per_usdc: result.rate,
-      source: result.source,
-      fetched_at: new Date().toISOString(),
-      last_attempt_at: new Date().toISOString(),
-      last_error: '',
-    })
-    .eq('id', true);
-
-  revalidatePath('/admin/payments');
-  revalidatePath('/');
-
-  // Checked rather than assumed. An unchecked write here is what made this
-  // invisible in the first place.
-  if (error) {
-    return { ok: false, message: `Got the rate but could not save it: ${error.message}` };
-  }
-
-  return {
-    ok: true,
-    message: `Rate updated: 1 USDC = ${result.rate?.toFixed(4)} CAD, from ${result.source}.`,
-  };
 }
 
 // Re-exported so the address paste box can validate as the user types without
