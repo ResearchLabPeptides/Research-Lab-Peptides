@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { refreshRateNow, saveUsdcSettings } from '@/lib/actions/usdc';
+import { refreshRateNow, saveUsdcSettings, setRateManually } from '@/lib/actions/usdc';
 
 /**
  * The exchange rate and the switches around it.
@@ -36,6 +36,8 @@ export function UsdcRatePanel({
   available: number;
 }) {
   const [pending, startTransition] = useTransition();
+  const [manual, setManual] = useState('');
+  const [showManual, setShowManual] = useState(false);
   const [form, setForm] = useState({
     enabled: settings?.usdc_enabled ?? false,
     markupBps: settings?.usdc_markup_bps ?? 0,
@@ -92,11 +94,61 @@ export function UsdcRatePanel({
           )}
         </div>
 
-        <Button variant="outline" onClick={refresh} disabled={pending}>
-          <RefreshCw className={pending ? 'size-4 animate-spin' : 'size-4'} aria-hidden />
-          Refresh now
-        </Button>
+        <div className="flex flex-col items-end gap-2">
+          <Button variant="outline" onClick={refresh} disabled={pending}>
+            <RefreshCw className={pending ? 'size-4 animate-spin' : 'size-4'} aria-hidden />
+            Refresh now
+          </Button>
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline underline-offset-2"
+            onClick={() => setShowManual((v) => !v)}
+          >
+            {showManual ? 'Hide' : 'Set the rate by hand'}
+          </button>
+        </div>
       </div>
+
+      {/* A way through when no rate service answers. Better than a shop being
+          unable to take payment because a third party is down or is blocking
+          the datacentre this runs in. */}
+      {showManual ? (
+        <div className="rounded-lg border border-border bg-muted/40 p-4">
+          <Label htmlFor="manual-rate">CAD per 1 USDC</Label>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <Input
+              id="manual-rate"
+              value={manual}
+              placeholder="1.37"
+              inputMode="decimal"
+              className="max-w-[10rem]"
+              onChange={(event) => setManual(event.target.value)}
+            />
+            <Button
+              variant="secondary"
+              disabled={pending || manual.trim() === ''}
+              onClick={() =>
+                startTransition(async () => {
+                  const result = await setRateManually(manual);
+                  if (result.ok) {
+                    toast.success(result.message);
+                    setManual('');
+                    setShowManual(false);
+                  } else {
+                    toast.error(result.message);
+                  }
+                })
+              }
+            >
+              Use this rate
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Look up &ldquo;USDC to CAD&rdquo; and enter what you find. It ages out on the same
+            schedule as a fetched rate, so set it again if the automatic refresh stays down.
+          </p>
+        </div>
+      ) : null}
 
       <div className="grid gap-4 border-t pt-5 sm:grid-cols-2">
         <label className="flex items-start gap-3">
