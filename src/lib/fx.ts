@@ -36,16 +36,27 @@ interface RateSource {
   /** Pulls the CAD-per-USDC figure out of that service's response shape. */
   extract: (body: unknown) => number | undefined;
   note?: string;
+  /** Built per request, so an API key added later is picked up without code changes. */
+  headers?: () => Record<string, string>;
 }
 
 const SOURCES: RateSource[] = [
   {
     name: 'coingecko',
-    // The keyless public endpoint: no key, no headers. CoinGecko's docs are
-    // explicit that sending an API key header here is ignored, and that the
-    // limit is IP-shared — which is why the daily budget exists.
+    // Same URL with or without a key. Set COINGECKO_API_KEY and the request
+    // moves from the keyless pool — 5 to 15 calls a minute shared with every
+    // other project calling from this datacentre — onto the free Demo plan's
+    // own allowance. That is the single most effective thing that can be done
+    // about intermittent 429s, and it costs nothing.
     url: 'https://api.coingecko.com/api/v3/simple/price?ids=usd-coin&vs_currencies=cad',
     extract: (b) => (b as { 'usd-coin'?: { cad?: number } })?.['usd-coin']?.cad,
+    headers: () => {
+      const key = process.env.COINGECKO_API_KEY?.trim();
+      // The header must be absent rather than empty when there is no key:
+      // CoinGecko ignores it on the keyless endpoint, but an empty credential
+      // is the kind of thing that starts being rejected later.
+      return key ? { 'x-cg-demo-api-key': key } : {};
+    },
   },
   {
     name: 'coinbase',
@@ -88,7 +99,7 @@ const MAX_PLAUSIBLE_CAD_PER_USDC = 3.0;
 async function trySource(source: RateSource): Promise<RateResult> {
   try {
     const response = await fetch(source.url, {
-      headers: { accept: 'application/json' },
+      headers: { accept: 'application/json', ...(source.headers?.() ?? {}) },
       cache: 'no-store',
       signal: AbortSignal.timeout(8_000),
     });
@@ -97,9 +108,12 @@ async function trySource(source: RateSource): Promise<RateResult> {
       // 429 is the one worth naming: on a keyless, IP-shared endpoint it means
       // other traffic from this datacentre has used the allowance, not that
       // anything here is misconfigured. The daily budget already backs us off.
+      const keyed = source.name === 'coingecko' && !!process.env.COINGECKO_API_KEY?.trim();
       const reason =
         response.status === 429
-          ? 'rate limited (the shared allowance for this server is used up)'
+          ? keyed
+            ? 'rate limited — the monthly allowance for your API key may be spent'
+            : 'rate limited (the shared keyless allowance for this server is used up — a free CoinGecko API key fixes this)'
           : `returned ${response.status}`;
       return { ok: false, message: `${source.name} ${reason}` };
     }
