@@ -104,9 +104,6 @@ export function UsdcRatePanel({
               ? `Last checked ${new Date(rate.last_attempt_at).toLocaleString('en-CA')}.`
               : 'Not checked automatically yet.'}{' '}
             The rate refreshes itself when the shop is visited and the figure has aged.
-            {budget
-              ? ` ${budget.remaining} of ${budget.budget} lookups left today.`
-              : ''}
           </p>
         </div>
 
