@@ -217,6 +217,52 @@ export async function saveUsdcSettings(input: unknown): Promise<ActionResult> {
   return { ok: true, message: 'Saved.' };
 }
 
+/**
+ * Sets the rate by hand.
+ *
+ * A way through when no rate service is reachable — a shop should not be unable
+ * to take payment because a third party is down or is blocking the datacentre
+ * this runs in. The figure is sanity-checked exactly as a fetched one is, and
+ * the source is recorded as manual so the admin screen can say so rather than
+ * implying a live rate.
+ */
+export async function setRateManually(input: string): Promise<ActionResult> {
+  await requireStaff('manager');
+
+  const rate = Number(String(input).trim().replace(/[^0-9.]/g, ''));
+
+  if (!Number.isFinite(rate) || rate <= 0) {
+    return { ok: false, message: 'Enter the rate as a number, for example 1.37.' };
+  }
+
+  // Same band the automatic path uses. A typo here would misprice every USDC
+  // order until someone noticed.
+  if (rate < 0.8 || rate > 3) {
+    return {
+      ok: false,
+      message: `${rate} CAD per USDC is outside the plausible range. Check the figure.`,
+    };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('fx_rate_cache')
+    .update({
+      cad_per_usdc: rate,
+      source: 'set by hand',
+      fetched_at: new Date().toISOString(),
+      last_error: '',
+    })
+    .eq('id', true);
+
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/admin/payments');
+  revalidatePath('/');
+
+  return { ok: true, message: `Rate set to 1 USDC = ${rate.toFixed(4)} CAD.` };
+}
+
 /** Manual rate refresh, for when staff do not want to wait for the schedule. */
 export async function refreshRateNow(): Promise<ActionResult> {
   await requireStaff('manager');
