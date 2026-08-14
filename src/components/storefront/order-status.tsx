@@ -102,11 +102,12 @@ export function OrderStatus({
         </div>
         <p className="text-sm text-muted-foreground">
           Placed {formatDateTime(result.placed_at)} for {result.customer_name}.
+          {/* Delivery date only once it has actually happened. There is no
+              estimated arrival: this ships anywhere in Canada, so any figure
+              generated at checkout was wrong for most orders. */}
           {result.status === 'delivered' && result.delivered_at
             ? ` Delivered ${formatRelative(result.delivered_at)}.`
-            : result.estimated_delivery_at && !cancelled
-              ? ` Estimated arrival ${formatRelative(result.estimated_delivery_at)}.`
-              : ''}
+            : ''}
         </p>
       </header>
 
