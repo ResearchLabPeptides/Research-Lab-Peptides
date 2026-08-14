@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { ensureRateFresh } from '@/lib/fx';
 import { deliveryQuoteSchema } from '@/lib/validation';
 import { LIMITS, callerKey, checkRateLimit, tooManyRequests } from '@/lib/rate-limit';
 import type { DeliveryQuote } from '@/lib/types';
@@ -27,6 +28,15 @@ export async function POST(request: Request) {
   }
 
   const supabase = await createClient();
+  // Refreshed here rather than in getPublicSettings, which the root layout
+  // calls: after() throws when there is no live request, so anything Next
+  // renders statically would break. A quote is always a real request from a
+  // real customer, and it is the moment before they choose how to pay — the
+  // one point where a stale rate actually matters.
+  after(async () => {
+    await ensureRateFresh();
+  });
+
   const { data, error } = await supabase.rpc('quote_delivery', {
     p_postal: parsed.data.postalCode,
     p_city: parsed.data.city,
