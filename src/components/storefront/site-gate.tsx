@@ -171,10 +171,13 @@ function Acknowledgement({
 }) {
   const id = `ack-${item.key}`;
 
+  // A label, not a div, so the whole row toggles. On a phone the checkbox alone
+  // is a 20px target — making the row the target is the difference between
+  // tapping comfortably and aiming. min-h-11 is the 44px accessibility minimum.
   return (
-    <div
+    <label
       className={cn(
-        'rounded-lg border p-3 transition-colors',
+        'block min-h-11 cursor-pointer rounded-lg border p-3 transition-colors',
         checked ? 'border-primary bg-accent/40' : 'border-border',
       )}
     >
@@ -189,7 +192,7 @@ function Acknowledgement({
           className="mt-0.5 size-5 shrink-0 cursor-pointer accent-[var(--primary)]"
         />
         <div className="min-w-0 flex-1">
-          <label htmlFor={id} className="cursor-pointer text-sm font-medium leading-snug">
+          <span className="block text-sm font-medium leading-snug">
             {item.label}
             {item.is_required ? (
               <span className="ml-1 text-destructive" aria-label="required">
@@ -200,7 +203,7 @@ function Acknowledgement({
                 {optionalLabel}
               </span>
             )}
-          </label>
+          </span>
 
           {item.body ? (
             <p id={`${id}-body`} className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -221,6 +224,6 @@ function Acknowledgement({
           ) : null}
         </div>
       </div>
-    </div>
+    </label>
   );
 }
