@@ -169,6 +169,61 @@ export async function confirmUsdcPayment(input: unknown): Promise<ActionResult> 
   };
 }
 
+/**
+ * Saves the crypto payment discount.
+ *
+ * Capped at 50% for the same reason the database caps it: a larger figure is
+ * far more likely to be a typo than an intention, and the cost of that typo is
+ * every order that day going out at a fraction of its price.
+ */
+export async function saveCryptoDiscount(input: {
+  enabled: boolean;
+  bps: number;
+  label: string;
+  stacks: boolean;
+  maxCents: number;
+}): Promise<ActionResult> {
+  await requireStaff('administrator');
+
+  if (!Number.isFinite(input.bps) || input.bps < 0 || input.bps > 5000) {
+    return { ok: false, message: 'Enter a discount between 0% and 50%.' };
+  }
+
+  if (input.enabled && input.bps === 0) {
+    return { ok: false, message: 'Set a percentage above 0, or switch the discount off.' };
+  }
+
+  if (!Number.isFinite(input.maxCents) || input.maxCents < 0) {
+    return { ok: false, message: 'The ceiling must be a positive amount, or blank for no limit.' };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('settings')
+    .update({
+      crypto_discount_enabled: input.enabled,
+      crypto_discount_bps: input.bps,
+      crypto_discount_label: input.label,
+      crypto_discount_stacks: input.stacks,
+      crypto_discount_max_cents: input.maxCents,
+    })
+    .eq('id', true);
+
+  // Checked rather than assumed: an unchecked write here would leave the screen
+  // showing a saved setting that never reached the database.
+  if (error) return { ok: false, message: `Could not save: ${error.message}` };
+
+  revalidatePath('/admin/coupons');
+  revalidatePath('/');
+
+  return {
+    ok: true,
+    message: input.enabled
+      ? `Saved. USDC customers get ${(input.bps / 100).toFixed(2)}% off.`
+      : 'Saved. The crypto discount is off.',
+  };
+}
+
 /** Turns USDC on and off and adjusts the thresholds behind it. */
 export async function saveUsdcSettings(input: unknown): Promise<ActionResult> {
   await requireStaff('administrator');
