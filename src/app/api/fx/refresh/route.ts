@@ -22,8 +22,16 @@ export async function GET(request: Request) {
     }
   }
 
+  // The nightly job spends one call from the same budget as everything else.
+  const { createServiceClient } = await import('@/lib/supabase/admin');
+  await createServiceClient().rpc('record_rate_call');
+
   const result = await refreshCachedRate();
 
+  // Which sources were tried and what each said, so this endpoint can be opened
+  // in a browser to test the fetch on its own — separating "the schedule is not
+  // firing" from "the rate services are refusing us", which look identical from
+  // the admin screen.
   if (!result.ok) {
     // 200 on purpose. The refresh failed but the previous rate is still in
     // place and still being served, so this is not an outage and should not
