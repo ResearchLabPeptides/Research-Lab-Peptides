@@ -19,6 +19,7 @@ export function UsdcRatePanel({
   rate,
   settings,
   available,
+  budget,
 }: {
   rate: {
     cad_per_usdc: number;
@@ -35,6 +36,7 @@ export function UsdcRatePanel({
     usdc_rate_max_age_hours: number;
   } | null;
   available: number;
+  budget: { used: number; budget: number; remaining: number } | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [manual, setManual] = useState('');
@@ -102,6 +104,9 @@ export function UsdcRatePanel({
               ? `Last checked ${new Date(rate.last_attempt_at).toLocaleString('en-CA')}.`
               : 'Not checked automatically yet.'}{' '}
             The rate refreshes itself when the shop is visited and the figure has aged.
+            {budget
+              ? ` ${budget.remaining} of ${budget.budget} lookups left today.`
+              : ''}
           </p>
         </div>
 
