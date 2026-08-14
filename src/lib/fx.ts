@@ -161,3 +161,39 @@ export async function refreshCachedRate(): Promise<RateResult> {
 
   return result;
 }
+
+/**
+ * Refreshes the rate if it has gone stale, at most one caller at a time.
+ *
+ * Called from ordinary storefront traffic rather than only from a schedule, so
+ * the rate heals itself: a failed fetch is retried the next time someone visits
+ * rather than twenty-four hours later. The claim in the database means a burst
+ * of visitors produces one request to the rate service, not one per visitor.
+ *
+ * Never awaited by the caller and never throws. A page must not render more
+ * slowly, or at all differently, because a currency API is having a bad
+ * afternoon.
+ */
+export async function ensureRateFresh(): Promise<void> {
+  try {
+    const supabase = createServiceClient();
+
+    const { data: stale } = await supabase.rpc('rate_needs_refresh');
+    if (stale !== true) return;
+
+    // Twenty minutes between attempts: often enough that a customer arriving
+    // after an outage gets a fresh rate quickly, rare enough that a persistent
+    // failure cannot hammer a free API tier.
+    const { data: claimed } = await supabase.rpc('claim_rate_refresh', {
+      p_min_interval_minutes: 20,
+    });
+    if (claimed !== true) return;
+
+    await refreshCachedRate();
+  } catch {
+    // Swallowed on purpose. This runs in the background of a page render and
+    // its failure is already recorded in fx_rate_cache.last_error for the admin
+    // screen; surfacing it here would break a page for a customer who does not
+    // care about the exchange rate.
+  }
+}
