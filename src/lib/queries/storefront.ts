@@ -1,5 +1,6 @@
 import 'server-only';
 import { createClient } from '@/lib/supabase/server';
+import { after } from 'next/server';
 import { ensureRateFresh } from '@/lib/fx';
 import { type ContentMap } from '@/lib/content';
 
@@ -53,10 +54,17 @@ export async function getPublicSettings(): Promise<PublicSettings> {
   // usdc_available() is asked rather than inferred, because "can we take USDC
   // right now" depends on the rate's age and the address pool as well as the
   // switch, and the database is the only place that knows all three.
-  // Kicked off, not awaited: if the rate has gone stale this refreshes it in the
-  // background so the shop repairs itself between visits, rather than waiting
-  // for tomorrow's scheduled run. Failure here changes nothing about this page.
-  void ensureRateFresh();
+  // after() rather than a bare call, and definitely not `void ensureRateFresh()`.
+  //
+  // On serverless the instance is frozen the moment the response is sent, so a
+  // floating promise is killed part-way through: the refresh claims the job,
+  // the fetch never completes, and the result is a rate that says it was
+  // checked but never updates and reports no error. after() tells the platform
+  // to keep the invocation alive until this finishes, while still letting the
+  // page respond immediately.
+  after(async () => {
+    await ensureRateFresh();
+  });
 
   const [{ data, error }, { data: usdcOk }] = await Promise.all([
     supabase
