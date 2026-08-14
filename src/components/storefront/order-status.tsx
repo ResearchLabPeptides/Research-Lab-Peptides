@@ -48,8 +48,8 @@ export function OrderStatus({
   if (failed) {
   // discount_cents is every discount added together; the crypto part is broken
   // back out so each one can be named on its own line.
-  const cryptoCents = Number(result.crypto_discount_cents ?? 0);
-  const couponCents = Math.max(0, Number(result.discount_cents ?? 0) - cryptoCents);
+  const cryptoCents = Number(result?.crypto_discount_cents ?? 0);
+  const couponCents = Math.max(0, Number(result?.discount_cents ?? 0) - cryptoCents);
 
     return (
       <EmptyState
