@@ -1,81 +1,230 @@
--- =============================================================================
--- 0031  Save the exchange rate without needing the service role key
--- =============================================================================
--- Symptom that led here: sixteen refresh attempts in a day, no rate saved, and
--- no error recorded anywhere.
---
--- The cause is that those two operations went through different doors. The
--- attempt counter is bumped by claim_rate_refresh(), which is security definer
--- and therefore runs with the function owner's rights — it worked. Saving the
--- rate was a plain UPDATE from the application, which is subject to row level
--- security, and fx_rate_cache had no write policy. So the write was refused.
--- Worse, the write that records *why* it was refused was refused for the same
--- reason, which is why last_error stayed empty and there was nothing to
--- diagnose from.
---
--- The underlying misconfiguration is a SUPABASE_SERVICE_ROLE_KEY that is not
--- actually the service role key, since that key is what was supposed to bypass
--- RLS here. That is worth correcting on its own. But this function removes the
--- dependency: saving a rate is a narrow, well-defined operation that does not
--- need the most privileged credential in the system to be correct.
+import 'server-only';
+
+import { createServiceClient } from '@/lib/supabase/admin';
 
 /**
- * Records the outcome of a rate lookup — success or failure, both go through
- * here.
+ * The CAD price of one USDC.
  *
- * security definer so it works from the cron job, from a background refresh
- * with no session, and from a staff member pressing the button, without any of
- * them holding elevated credentials. The only thing it can touch is the single
- * row of fx_rate_cache.
+ * Deliberately quoted against USDC rather than against USD. USDC is meant to
+ * track the dollar and usually does, but it has drifted before, and on a day
+ * when it trades at 0.995 a pure USD/CAD rate would quietly undercharge every
+ * customer by half a percent. Asking what a USDC is actually worth in Canadian
+ * dollars is the number that matters, because USDC is the thing arriving.
  *
- * Validates the figure itself rather than trusting the caller. A rate arriving
- * as zero, or wildly out of band because a service returned something
- * unexpected, would otherwise be written and then used to price every USDC
- * order until someone noticed.
+ * Fetched on a schedule and cached in Postgres, never in memory: Vercel
+ * functions are stateless, so an in-process cache would refetch on every cold
+ * start and leave no record of which rate was in force when an order was
+ * quoted.
  */
-create or replace function save_fx_rate(
-  p_rate   numeric default null,
-  p_source text default '',
-  p_error  text default ''
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  -- A failed lookup: record why, leave the previous rate in place. A rate a few
-  -- hours old is still a good rate, and discarding it because one fetch failed
-  -- would take USDC offline for no reason.
-  if p_rate is null then
-    update fx_rate_cache
-    set last_error = coalesce(p_error, 'Unknown error'),
-        last_attempt_at = now()
-    where id;
 
-    return jsonb_build_object('ok', false, 'saved', false);
-  end if;
+/**
+ * Where the rate comes from.
+ *
+ * Several sources, tried in order, because a single one is a single point of
+ * failure and the failure is silent from a shop's point of view: USDC simply
+ * stops being offered. CoinGecko's free endpoint in particular rejects requests
+ * from cloud IP ranges, which is exactly where this runs.
+ *
+ * Ordered by directness. The first two quote USDC against CAD, which is the
+ * number that actually matters. The last quotes plain USD and is a fallback for
+ * when nothing else answers — worth having, because a rate that is a fraction
+ * of a percent off is far better than no rate and no crypto payments at all.
+ */
+interface RateSource {
+  name: string;
+  url: string;
+  /** Pulls the CAD-per-USDC figure out of that service's response shape. */
+  extract: (body: unknown) => number | undefined;
+  note?: string;
+  /** Built per request, so an API key added later is picked up without code changes. */
+  headers?: () => Record<string, string>;
+}
 
-  if p_rate <= 0.8 or p_rate >= 3.0 then
-    update fx_rate_cache
-    set last_error = format('Refused an implausible rate of %s CAD per USDC from %s',
-                            p_rate, coalesce(nullif(p_source, ''), 'an unnamed source')),
-        last_attempt_at = now()
-    where id;
+const SOURCES: RateSource[] = [
+  {
+    name: 'coingecko',
+    // Same URL with or without a key. Set COINGECKO_API_KEY and the request
+    // moves from the keyless pool — 5 to 15 calls a minute shared with every
+    // other project calling from this datacentre — onto the free Demo plan's
+    // own allowance. That is the single most effective thing that can be done
+    // about intermittent 429s, and it costs nothing.
+    url: 'https://api.coingecko.com/api/v3/simple/price?ids=usd-coin&vs_currencies=cad',
+    extract: (b) => (b as { 'usd-coin'?: { cad?: number } })?.['usd-coin']?.cad,
+    headers: () => {
+      const key = process.env.COINGECKO_API_KEY?.trim();
+      // The header must be absent rather than empty when there is no key:
+      // CoinGecko ignores it on the keyless endpoint, but an empty credential
+      // is the kind of thing that starts being rejected later.
+      return key ? { 'x-cg-demo-api-key': key } : {};
+    },
+  },
+  {
+    name: 'coinbase',
+    url: 'https://api.coinbase.com/v2/exchange-rates?currency=USDC',
+    extract: (b) => {
+      const rate = (b as { data?: { rates?: Record<string, string> } })?.data?.rates?.CAD;
+      return rate === undefined ? undefined : Number(rate);
+    },
+  },
+  {
+    name: 'frankfurter',
+    // European Central Bank data. Quotes USD rather than USDC, so it carries a
+    // note: on a day when USDC drifts off its peg this is slightly wrong, and
+    // the admin screen says which source is in force.
+    url: 'https://api.frankfurter.app/latest?from=USD&to=CAD',
+    extract: (b) => (b as { rates?: { CAD?: number } })?.rates?.CAD,
+    note: 'USD rate — USDC itself was unavailable',
+  },
+];
 
-    return jsonb_build_object('ok', false, 'saved', false, 'reason', 'implausible');
-  end if;
+export interface RateResult {
+  ok: boolean;
+  rate?: number;
+  source?: string;
+  message?: string;
+}
 
-  update fx_rate_cache
-  set cad_per_usdc = p_rate,
-      source = coalesce(nullif(p_source, ''), 'unknown'),
-      fetched_at = now(),
-      last_attempt_at = now(),
-      last_error = ''
-  where id;
+/**
+ * A rate that fails a sanity check is treated as no rate at all.
+ *
+ * If a service returns a malformed body, a zero, or a number in the wrong
+ * units, the damage is not an error page — it is every customer that day being
+ * told to send the wrong amount of money. The band below is wide enough to
+ * survive real currency movement and narrow enough to catch a decimal point in
+ * the wrong place.
+ */
+const MIN_PLAUSIBLE_CAD_PER_USDC = 0.8;
+const MAX_PLAUSIBLE_CAD_PER_USDC = 3.0;
 
-  return jsonb_build_object('ok', true, 'saved', true, 'rate', p_rate);
-end;
-$$;
+async function trySource(source: RateSource): Promise<RateResult> {
+  try {
+    const response = await fetch(source.url, {
+      headers: { accept: 'application/json', ...(source.headers?.() ?? {}) },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8_000),
+    });
 
-grant execute on function save_fx_rate(numeric, text, text) to anon, authenticated;
+    if (!response.ok) {
+      // 429 is the one worth naming: on a keyless, IP-shared endpoint it means
+      // other traffic from this datacentre has used the allowance, not that
+      // anything here is misconfigured. The daily budget already backs us off.
+      const keyed = source.name === 'coingecko' && !!process.env.COINGECKO_API_KEY?.trim();
+      const reason =
+        response.status === 429
+          ? keyed
+            ? 'rate limited — the monthly allowance for your API key may be spent'
+            : 'rate limited (the shared keyless allowance for this server is used up — a free CoinGecko API key fixes this)'
+          : `returned ${response.status}`;
+      return { ok: false, message: `${source.name} ${reason}` };
+    }
+
+    const rate = source.extract(await response.json());
+
+    if (typeof rate !== 'number' || !Number.isFinite(rate)) {
+      return { ok: false, message: `${source.name} returned no usable number` };
+    }
+
+    if (rate < MIN_PLAUSIBLE_CAD_PER_USDC || rate > MAX_PLAUSIBLE_CAD_PER_USDC) {
+      return { ok: false, message: `${source.name} gave ${rate}, outside the plausible range` };
+    }
+
+    return {
+      ok: true,
+      rate,
+      source: source.note ? `${source.name} (${source.note})` : source.name,
+    };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'unknown error';
+    return { ok: false, message: `${source.name}: ${reason}` };
+  }
+}
+
+/**
+ * Tries each source until one answers. Reports every failure when they all do,
+ * because "could not reach the rate service" tells whoever is looking nothing
+ * about which service, or why.
+ */
+export async function fetchUsdcCadRate(): Promise<RateResult> {
+  const failures: string[] = [];
+
+  for (const source of SOURCES) {
+    const result = await trySource(source);
+    if (result.ok) return result;
+    failures.push(result.message ?? source.name);
+  }
+
+  return {
+    ok: false,
+    message: `No rate source answered. ${failures.join('; ')}`,
+  };
+}
+
+/**
+ * Refreshes the cached rate.
+ *
+ * Both outcomes are written through save_fx_rate(), a security definer function
+ * that owns the single row of fx_rate_cache. That is deliberate: the earlier
+ * version wrote to the table directly and depended on the service role key
+ * bypassing row level security, so a mistyped key meant the rate silently never
+ * saved *and* the error explaining it silently never saved either. Sixteen
+ * attempts, nothing recorded, nothing to diagnose.
+ *
+ * On failure the previous rate is left alone. A rate a few hours old is still a
+ * good rate; taking USDC offline because one fetch failed would be the wrong
+ * trade.
+ */
+export async function refreshCachedRate(): Promise<RateResult> {
+  const result = await fetchUsdcCadRate();
+  const supabase = createServiceClient();
+
+  const { error } = await supabase.rpc('save_fx_rate', {
+    p_rate: result.ok ? result.rate : null,
+    p_source: result.source ?? '',
+    p_error: result.ok ? '' : (result.message ?? 'Unknown error'),
+  });
+
+  // Checked, not assumed. An unchecked write here is exactly what hid this
+  // problem for as long as it was hidden.
+  if (error) {
+    return { ok: false, message: `Could not save the rate: ${error.message}` };
+  }
+
+  return result;
+}
+
+export async function ensureRateFresh(): Promise<void> {
+  const supabase = createServiceClient();
+
+  try {
+    const { data: stale } = await supabase.rpc('rate_needs_refresh');
+    if (stale !== true) return;
+
+    // Twenty minutes between attempts: often enough that a customer arriving
+    // after an outage gets a fresh rate quickly, rare enough that a persistent
+    // failure cannot hammer a free API tier.
+    // 140 minutes ≈ ten evenly spaced lookups across a day, so the budget
+    // lasts until midnight instead of being spent in the first busy hour.
+    const { data: claimed } = await supabase.rpc('claim_rate_refresh', {
+      p_min_interval_minutes: 140,
+    });
+    if (claimed !== true) return;
+
+    await refreshCachedRate();
+  } catch (error) {
+    // Recorded, not swallowed. An earlier version discarded this, which meant a
+    // background refresh that died produced a "last checked" time, no rate, and
+    // no explanation anywhere — the most confusing possible combination. The
+    // shop still must not break over a currency API, so the error is written to
+    // the admin screen rather than thrown.
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    try {
+      await supabase
+        .from('fx_rate_cache')
+        .update({ last_error: `Background refresh failed: ${message}` })
+        .eq('id', true);
+    } catch {
+      // Nothing left to do: the database itself is unreachable, which the shop
+      // will be reporting far more loudly elsewhere.
+    }
+  }
+}
