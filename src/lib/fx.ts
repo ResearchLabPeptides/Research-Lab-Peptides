@@ -40,6 +40,14 @@ interface RateSource {
 
 const SOURCES: RateSource[] = [
   {
+    name: 'coingecko',
+    // The keyless public endpoint: no key, no headers. CoinGecko's docs are
+    // explicit that sending an API key header here is ignored, and that the
+    // limit is IP-shared — which is why the daily budget exists.
+    url: 'https://api.coingecko.com/api/v3/simple/price?ids=usd-coin&vs_currencies=cad',
+    extract: (b) => (b as { 'usd-coin'?: { cad?: number } })?.['usd-coin']?.cad,
+  },
+  {
     name: 'coinbase',
     url: 'https://api.coinbase.com/v2/exchange-rates?currency=USDC',
     extract: (b) => {
@@ -48,15 +56,10 @@ const SOURCES: RateSource[] = [
     },
   },
   {
-    name: 'coingecko',
-    url: 'https://api.coingecko.com/api/v3/simple/price?ids=usd-coin&vs_currencies=cad',
-    extract: (b) => (b as { 'usd-coin'?: { cad?: number } })?.['usd-coin']?.cad,
-  },
-  {
     name: 'frankfurter',
-    // European Central Bank data, no key, no rate limit. Quotes USD, not USDC,
-    // so it carries a note: on a day when USDC drifts off its peg this is
-    // slightly wrong, and the admin screen says which source is in force.
+    // European Central Bank data. Quotes USD rather than USDC, so it carries a
+    // note: on a day when USDC drifts off its peg this is slightly wrong, and
+    // the admin screen says which source is in force.
     url: 'https://api.frankfurter.app/latest?from=USD&to=CAD',
     extract: (b) => (b as { rates?: { CAD?: number } })?.rates?.CAD,
     note: 'USD rate — USDC itself was unavailable',
@@ -91,7 +94,14 @@ async function trySource(source: RateSource): Promise<RateResult> {
     });
 
     if (!response.ok) {
-      return { ok: false, message: `${source.name} returned ${response.status}` };
+      // 429 is the one worth naming: on a keyless, IP-shared endpoint it means
+      // other traffic from this datacentre has used the allowance, not that
+      // anything here is misconfigured. The daily budget already backs us off.
+      const reason =
+        response.status === 429
+          ? 'rate limited (the shared allowance for this server is used up)'
+          : `returned ${response.status}`;
+      return { ok: false, message: `${source.name} ${reason}` };
     }
 
     const rate = source.extract(await response.json());
@@ -190,8 +200,10 @@ export async function ensureRateFresh(): Promise<void> {
     // Twenty minutes between attempts: often enough that a customer arriving
     // after an outage gets a fresh rate quickly, rare enough that a persistent
     // failure cannot hammer a free API tier.
+    // 140 minutes ≈ ten evenly spaced lookups across a day, so the budget
+    // lasts until midnight instead of being spent in the first busy hour.
     const { data: claimed } = await supabase.rpc('claim_rate_refresh', {
-      p_min_interval_minutes: 20,
+      p_min_interval_minutes: 140,
     });
     if (claimed !== true) return;
 
