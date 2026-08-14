@@ -25,6 +25,7 @@ export function UsdcRatePanel({
     source: string;
     fetched_at: string | null;
     last_error: string;
+    last_attempt_at?: string | null;
   } | null;
   settings: {
     usdc_enabled: boolean;
@@ -87,11 +88,21 @@ export function UsdcRatePanel({
               No rate yet. Refresh before turning USDC on.
             </p>
           )}
-          {rate?.last_error && (
+          {rate?.last_error ? (
             <p className="mt-2 text-sm text-[var(--destructive)]">
               Last refresh failed: {rate.last_error}
             </p>
-          )}
+          ) : null}
+
+          {/* Says when it last tried, not just when it last succeeded. Without
+              this, a rate that stops updating looks identical to one that is
+              updating fine and simply has not moved. */}
+          <p className="mt-1 text-xs text-muted-foreground">
+            {rate?.last_attempt_at
+              ? `Last checked ${new Date(rate.last_attempt_at).toLocaleString('en-CA')}.`
+              : 'Not checked automatically yet.'}{' '}
+            The rate refreshes itself when the shop is visited and the figure has aged.
+          </p>
         </div>
 
         <div className="flex flex-col items-end gap-2">
