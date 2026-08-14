@@ -221,7 +221,12 @@ export function OrderRail({
       <div
         className={cn(
           'min-h-0 flex-1 px-4',
-          mode === 'checkout' ? 'overflow-visible' : 'overflow-y-auto',
+          // Always scrollable on mobile: the rail is a bottom drawer capped at
+          // 85dvh, so without an inner scroll everything past the first
+          // screenful — payment options, the Place order button — is
+          // unreachable. Only the desktop rail grows to fit the page instead.
+          'overflow-y-auto',
+          mode === 'checkout' ? 'lg:overflow-visible' : '',
         )}
       >
         {cart.itemCount === 0 ? (
@@ -412,7 +417,11 @@ export function OrderRail({
             {/* City, province and postal share one row. Postal is always six
                 characters, so it takes a fixed narrow column and gives the rest
                 to province, which carries the longest text in the form. */}
-            <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_5rem] gap-2">
+            {/* Two across on a phone, wrapping postal onto its own line: at 320px
+                the three-column version leaves the province select about 120px,
+                which is not enough for "British Columbia", and squeezes city to
+                72px. The tighter row only applies once there is room for it. */}
+            <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3 sm:grid-cols-[4.5rem_minmax(0,1fr)_5rem] sm:gap-2">
               <Field id="co-city" label="City" error={errors.city} required>
                 <Input
                   value={form.city}
