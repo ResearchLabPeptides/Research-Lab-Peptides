@@ -80,7 +80,7 @@ export function SiteGate({ config }: { config: GateConfig }) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-end justify-center overflow-y-auto bg-background/80 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+      className="fixed inset-0 z-[100] flex items-end justify-center overflow-hidden bg-background/80 p-0 backdrop-blur-sm sm:items-center sm:p-6"
       onKeyDown={trapFocus}
     >
       <div
@@ -89,18 +89,24 @@ export function SiteGate({ config }: { config: GateConfig }) {
         aria-modal="true"
         aria-labelledby="gate-title"
         aria-describedby="gate-intro"
-        className="w-full max-w-lg rounded-t-2xl border border-border bg-card p-6 shadow-2xl sm:rounded-2xl"
+        className="flex max-h-[100dvh] w-full max-w-lg flex-col rounded-t-2xl border border-border bg-card shadow-2xl sm:max-h-[90dvh] sm:rounded-2xl"
       >
-        <h2 id="gate-title" className="font-display text-xl font-bold tracking-tight">
-          {config.title}
-        </h2>
-        {config.intro ? (
-          <p id="gate-intro" className="mt-1.5 text-sm text-muted-foreground">
-            {config.intro}
-          </p>
-        ) : null}
+        {/* Pinned. On a short screen the whole card used to scroll as one
+            block, which pushed the heading off the top and left people looking
+            at a list of tick boxes with no idea what they were agreeing to. */}
+        <div className="shrink-0 px-6 pb-3 pt-6">
+          <h2 id="gate-title" className="font-display text-xl font-bold tracking-tight">
+            {config.title}
+          </h2>
+          {config.intro ? (
+            <p id="gate-intro" className="mt-1.5 text-sm text-muted-foreground">
+              {config.intro}
+            </p>
+          ) : null}
+        </div>
 
-        <ul className="mt-5 space-y-3">
+        {/* The only part that scrolls. */}
+        <ul className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-1">
           {config.items.map((item) => (
             <li key={item.key}>
               <Acknowledgement
@@ -115,16 +121,19 @@ export function SiteGate({ config }: { config: GateConfig }) {
           ))}
         </ul>
 
+        {/* Pinned too, so the button is always reachable without scrolling to
+            the end of a long list of acknowledgements. */}
+        <div className="shrink-0 border-t border-border px-6 pb-6 pt-4">
         {error ? (
           <p
             role="alert"
-            className="mt-4 rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
+            className="mb-3 rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive"
           >
             {error}
           </p>
         ) : null}
 
-        <div className="mt-6 space-y-2">
+        <div className="space-y-2">
           <Button
             type="button"
             size="lg"
@@ -148,6 +157,7 @@ export function SiteGate({ config }: { config: GateConfig }) {
           >
             {config.declineLabel}
           </a>
+        </div>
         </div>
       </div>
     </div>
