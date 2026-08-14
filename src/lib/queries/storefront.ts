@@ -1,5 +1,6 @@
 import 'server-only';
 import { createClient } from '@/lib/supabase/server';
+import { ensureRateFresh } from '@/lib/fx';
 import { type ContentMap } from '@/lib/content';
 
 export { text, type ContentMap } from '@/lib/content';
@@ -52,6 +53,11 @@ export async function getPublicSettings(): Promise<PublicSettings> {
   // usdc_available() is asked rather than inferred, because "can we take USDC
   // right now" depends on the rate's age and the address pool as well as the
   // switch, and the database is the only place that knows all three.
+  // Kicked off, not awaited: if the rate has gone stale this refreshes it in the
+  // background so the shop repairs itself between visits, rather than waiting
+  // for tomorrow's scheduled run. Failure here changes nothing about this page.
+  void ensureRateFresh();
+
   const [{ data, error }, { data: usdcOk }] = await Promise.all([
     supabase
       .from('settings')
