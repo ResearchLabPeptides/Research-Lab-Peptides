@@ -180,7 +180,6 @@ export type OrderLookupResult =
       status: OrderStatus;
       payment_status: PaymentStatus;
       placed_at: string;
-      estimated_delivery_at: string | null;
       delivered_at: string | null;
       tracking_notes: string;
       customer_name: string;
