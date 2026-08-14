@@ -75,8 +75,6 @@ export function DeliveryPricingForm({
 }) {
   const [fee, setFee] = React.useState(centsToInput(pricing.delivery_flat_fee_cents));
   const [minimum, setMinimum] = React.useState(centsToInput(pricing.delivery_minimum_order_cents));
-  const [etaMin, setEtaMin] = React.useState(String(pricing.delivery_eta_min_minutes));
-  const [etaMax, setEtaMax] = React.useState(String(pricing.delivery_eta_max_minutes));
   const [restrict, setRestrict] = React.useState(pricing.delivery_restrict_area);
   const [feedback, setFeedback] = React.useState<{ ok: boolean; message: string } | null>(null);
   const [pending, startTransition] = React.useTransition();
@@ -101,8 +99,10 @@ export function DeliveryPricingForm({
                     mode: pricing.delivery_mode,
                     flatFeeCents: inputToCents(fee) ?? 0,
                     minimumOrderCents: inputToCents(minimum) ?? 0,
-                    etaMinMinutes: Number(etaMin) || 0,
-                    etaMaxMinutes: Number(etaMax) || 0,
+                    // Delivery time estimates were removed in migration 0027.
+                    // Sent as zero so the existing action signature is unchanged.
+                    etaMinMinutes: 0,
+                    etaMaxMinutes: 0,
                     restrictArea: restrict,
                   }),
                 );
@@ -129,27 +129,6 @@ export function DeliveryPricingForm({
                   inputMode="decimal"
                   value={minimum}
                   onChange={(e) => setMinimum(e.target.value)}
-                />
-              </Field>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field id="d-eta-min" label="Fastest estimate (minutes)" required>
-                <Input
-                  type="number"
-                  min="0"
-                  className="tabular"
-                  value={etaMin}
-                  onChange={(e) => setEtaMin(e.target.value)}
-                />
-              </Field>
-              <Field id="d-eta-max" label="Slowest estimate (minutes)" required>
-                <Input
-                  type="number"
-                  min="0"
-                  className="tabular"
-                  value={etaMax}
-                  onChange={(e) => setEtaMax(e.target.value)}
                 />
               </Field>
             </div>
