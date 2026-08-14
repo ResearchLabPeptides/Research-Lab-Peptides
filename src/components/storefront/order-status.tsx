@@ -48,8 +48,7 @@ export function OrderStatus({
   if (failed) {
   // discount_cents is every discount added together; the crypto part is broken
   // back out so each one can be named on its own line.
-  const cryptoCents = Number(result?.crypto_discount_cents ?? 0);
-  const couponCents = Math.max(0, Number(result?.discount_cents ?? 0) - cryptoCents);
+ 
 
     return (
       <EmptyState
@@ -148,22 +147,24 @@ export function OrderStatus({
               every discount, so labelling it with the coupon code would credit
               the coupon for a saving the customer got for paying in crypto, and
               the numbers would not match what they were shown at checkout. */}
-          {couponCents > 0 ? (
-            <Line
-              label={
-                result.coupon_code ? `${result.coupon_code} — ${result.coupon_label}` : 'Discount'
-              }
-              value={`-${formatMoney(couponCents)}`}
-              discount
-            />
-          ) : null}
-          {cryptoCents > 0 ? (
-            <Line
-              label={result.crypto_discount_label || 'Crypto payment discount'}
-              value={`-${formatMoney(cryptoCents)}`}
-              discount
-            />
-          ) : null}
+       {Number(result.discount_cents ?? 0) - Number(result.crypto_discount_cents ?? 0) > 0 ? (
+  <Line
+    label={
+      result.coupon_code ? `${result.coupon_code} — ${result.coupon_label}` : 'Discount'
+    }
+    value={`-${formatMoney(
+      Number(result.discount_cents ?? 0) - Number(result.crypto_discount_cents ?? 0),
+    )}`}
+    discount
+  />
+) : null}
+{Number(result.crypto_discount_cents ?? 0) > 0 ? (
+  <Line
+    label={result.crypto_discount_label || 'Crypto payment discount'}
+    value={`-${formatMoney(Number(result.crypto_discount_cents ?? 0))}`}
+    discount
+  />
+) : null}
           <Line
             label={
               result.delivery_discount_label
