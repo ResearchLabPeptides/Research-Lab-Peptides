@@ -124,11 +124,26 @@ async function loadVars(
   };
 }
 
-/** The confirmation, sent the moment an order is placed. */
+/**
+ * The confirmation, sent the moment an order is placed.
+ *
+ * Every exit says why. An earlier version returned quietly when the order could
+ * not be loaded, which meant a failure to send looked identical to a send that
+ * never happened: nothing in the application log, nothing at the provider, and
+ * no way to tell which of the two it was.
+ */
 export async function sendOrderPlacedEmail(orderId: string): Promise<void> {
+  console.info('[email] order_placed: starting for', orderId);
+
   const loaded = await loadVars(orderId);
-  if (!loaded) return;
+  if (!loaded) {
+    console.error('[email] order_placed: could not load the order or its settings', orderId);
+    return;
+  }
+
+  console.info('[email] order_placed: sending to', loaded.to);
   await sendTemplatedEmail('order_placed', loaded.to, loaded.vars);
+  console.info('[email] order_placed: handed to the provider for', loaded.to);
 }
 
 /** The follow-up for a status change, if that status has a template. */
