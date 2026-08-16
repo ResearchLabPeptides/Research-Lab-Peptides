@@ -21,17 +21,39 @@ async function loadVars(
 ): Promise<{ to: string; vars: TemplateVars } | null> {
   const supabase = createServiceClient();
 
-  const [{ data: order }, { data: items }, { data: settings }] = await Promise.all([
+  const [
+    { data: order, error: orderError },
+    { data: items, error: itemsError },
+    { data: settings, error: settingsError },
+  ] = await Promise.all([
     supabase.from('orders').select('*').eq('id', orderId).maybeSingle(),
     supabase
       .from('order_items')
       .select('name, quantity, line_total_cents')
       .eq('order_id', orderId)
       .order('name'),
-    supabase.from('settings').select('company_name, payment_email, crypto_discount_label').maybeSingle(),
+    supabase
+      .from('settings')
+      .select('company_name, payment_email, crypto_discount_label')
+      .maybeSingle(),
   ]);
 
-  if (!order) return null;
+  // Reported, not discarded. These reads go through the service role key, so
+  // when that key is wrong they are refused by row level security and every one
+  // of them comes back empty — which used to look exactly like "no such order".
+  if (orderError) console.error('[email] could not read the order:', orderError.message);
+  if (itemsError) console.error('[email] could not read the order items:', itemsError.message);
+  if (settingsError) console.error('[email] could not read settings:', settingsError.message);
+
+  if (!order) {
+    console.error(
+      `[email] no order row came back for ${orderId}.`,
+      orderError
+        ? 'The error above says why.'
+        : 'No error was returned either, which means the row was filtered out — check that SUPABASE_SERVICE_ROLE_KEY in Vercel is the service_role secret, not the anon key.',
+    );
+    return null;
+  }
 
   const o = order as Record<string, unknown>;
   const base = process.env.NEXT_PUBLIC_SITE_URL ?? '';
