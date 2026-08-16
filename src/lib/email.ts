@@ -63,9 +63,14 @@ async function deliver(to: string, subject: string, text: string, html: string):
   const from = process.env.EMAIL_FROM ?? 'orders@example.com';
 
   if (!apiKey) {
-    console.info(`[email] would send to ${to}: ${subject}\n${text}\n`);
+    console.warn(
+      `[email] RESEND_API_KEY is not set — logging instead of sending. To: ${to} | ${subject}`,
+    );
+    console.info(text);
     return;
   }
+
+  console.info(`[email] sending via Resend: to=${to} from=${from}`);
 
   try {
     const res = await fetch('https://api.resend.com/emails', {
@@ -73,7 +78,11 @@ async function deliver(to: string, subject: string, text: string, html: string):
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ from, to, subject, html, text }),
     });
-    if (!res.ok) console.error('[email] send failed', res.status, await res.text());
+    if (!res.ok) {
+      console.error('[email] Resend refused it', res.status, await res.text());
+    } else {
+      console.info('[email] Resend accepted it for', to);
+    }
   } catch (error) {
     // A failed email must never fail the operation that triggered it. Staff have
     // already confirmed the payment; losing the receipt is the lesser problem.
@@ -98,7 +107,12 @@ export async function sendTemplatedEmail(
       console.warn(`[email] no template for "${key}" — nothing sent`);
       return;
     }
-    if (!data.is_active) return; // switched off on purpose
+    if (!data.is_active) {
+      // Switched off on purpose — but say so. Silence here is indistinguishable
+      // from a broken provider, and someone will spend an afternoon on it.
+      console.warn(`[email] template "${key}" is switched off — nothing sent`);
+      return;
+    }
 
     const subject = renderTemplate(data.subject as string, vars);
     const text = renderTemplate(data.body as string, vars);
