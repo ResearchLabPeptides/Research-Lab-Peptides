@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/admin';
 import { sendOrderPlacedEmail } from '@/lib/order-email';
 import { LIMITS, callerKey, checkRateLimit, tooManyRequests } from '@/lib/rate-limit';
@@ -107,8 +107,19 @@ export async function POST(request: Request) {
   // The confirmation carries the payment instructions, so it matters — but the
   // order already exists and is on screen. Never make the customer wait on an
   // email provider, and never fail their order because one is down.
-  void sendOrderPlacedEmail(placed.order_id).catch((error) => {
-    console.error('[checkout] confirmation email failed', error);
+  //
+  // after(), not a floating promise. On serverless the instance is frozen as
+  // soon as the response is sent, so `void sendOrderPlacedEmail(...)` starts
+  // the send and then has it killed part-way through: the order succeeds and
+  // the customer silently never gets their payment instructions. after() keeps
+  // the invocation alive until the send finishes, while still returning the
+  // response immediately.
+  after(async () => {
+    try {
+      await sendOrderPlacedEmail(placed.order_id);
+    } catch (error) {
+      console.error('[checkout] confirmation email failed', error);
+    }
   });
 
   return NextResponse.json(placed, { status: 201 });
