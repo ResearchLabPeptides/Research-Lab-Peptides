@@ -14,7 +14,13 @@ import type { DailySalesRow } from '@/lib/queries/admin';
 
 export function SalesChart({ data }: { data: DailySalesRow[] }) {
   const points = data.map((row) => ({
-    day: new Date(row.day).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }),
+    // Pinned to the shop's zone like every other date, so a bucket does not
+    // shift a day depending on where the page is rendered.
+    day: new Intl.DateTimeFormat('en-CA', {
+      month: 'short',
+      day: 'numeric',
+      timeZone: process.env.NEXT_PUBLIC_SHOP_TIMEZONE || 'America/Vancouver',
+    }).format(new Date(row.day)),
     revenue: row.revenue_cents / 100,
     orders: row.order_count,
   }));
