@@ -62,6 +62,20 @@ async function deliver(to: string, subject: string, text: string, html: string):
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM ?? 'orders@example.com';
 
+  /**
+   * Where a customer's reply goes.
+   *
+   * The From address lives on a sending-only subdomain with no inbox behind it,
+   * so without this a reply bounces — and the customer most likely to reply is
+   * one with a problem, which is the worst possible reply to lose. This can be
+   * any mailbox you actually read, including an ordinary Gmail account; it does
+   * not need to be on your domain.
+   *
+   * Falls back to the e-Transfer address from settings, which is already an
+   * address the shop monitors, rather than leaving replies with nowhere to go.
+   */
+  const replyTo = process.env.EMAIL_REPLY_TO?.trim() || process.env.INTERAC_EMAIL?.trim() || '';
+
   if (!apiKey) {
     console.warn(
       `[email] RESEND_API_KEY is not set — logging instead of sending. To: ${to} | ${subject}`,
@@ -76,7 +90,14 @@ async function deliver(to: string, subject: string, text: string, html: string):
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to, subject, html, text }),
+      body: JSON.stringify({
+        from,
+        to,
+        subject,
+        html,
+        text,
+        ...(replyTo ? { reply_to: replyTo } : {}),
+      }),
     });
     if (!res.ok) {
       console.error('[email] Resend refused it', res.status, await res.text());
