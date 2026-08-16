@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { refreshRateNow, saveUsdcSettings, setRateManually } from '@/lib/actions/usdc';
+import { formatDateTime } from '@/lib/format';
 
 /**
  * The exchange rate and the switches around it.
@@ -101,7 +102,7 @@ export function UsdcRatePanel({
               updating fine and simply has not moved. */}
           <p className="mt-1 text-xs text-muted-foreground">
             {rate?.last_attempt_at
-              ? `Last checked ${new Date(rate.last_attempt_at).toLocaleString('en-CA')}.`
+              ? `Last checked ${formatDateTime(rate.last_attempt_at)}.`
               : 'Not checked automatically yet.'}{' '}
             The rate refreshes itself when the shop is visited and the figure has aged.
           </p>
