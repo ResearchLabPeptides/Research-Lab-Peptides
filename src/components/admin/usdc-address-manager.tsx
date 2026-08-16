@@ -1,251 +1,234 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { toast } from 'sonner';
-import { AlertTriangle, Check, Plus, X } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { addUsdcAddresses, retireUsdcAddress } from '@/lib/actions/usdc';
-import { describeAddressProblem, shortenAddress } from '@/lib/solana';
-import type { UsdcPoolStats, UsdcAddress } from '@/lib/types';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { refreshRateNow, saveUsdcSettings, setRateManually } from '@/lib/actions/usdc';
+import { formatDateTime } from '@/lib/format';
 
 /**
- * The address pool.
+ * The exchange rate and the switches around it.
  *
- * These are receiving addresses, not wallets. The shop has one wallet, on a
- * phone; every address here belongs to it, so there is nothing per-order to
- * fund, sweep, or keep track of.
- *
- * Addresses are generated on that phone and pasted in here as plain text. No
- * key material ever reaches this screen or the server behind it.
- *
- * Every line is checked as it is typed, before anything is saved, because a
- * mistyped address is the one mistake in this whole system that cannot be
- * undone — the customer's money goes to an address nobody controls and there is
- * no way to get it back.
+ * The rate's age is stated in plain terms rather than as a timestamp, because
+ * the thing that matters is whether it is old enough to stop trusting.
  */
-export function UsdcAddressManager({
-  addresses,
-  stats,
+export function UsdcRatePanel({
+  rate,
+  settings,
+  available,
+  budget,
 }: {
-  addresses: UsdcAddress[];
-  stats: UsdcPoolStats;
+  rate: {
+    cad_per_usdc: number;
+    source: string;
+    fetched_at: string | null;
+    last_error: string;
+    last_attempt_at?: string | null;
+  } | null;
+  settings: {
+    usdc_enabled: boolean;
+    usdc_markup_bps: number;
+    usdc_low_pool_threshold: number;
+    usdc_quote_minutes: number;
+    usdc_rate_max_age_hours: number;
+  } | null;
+  available: number;
+  budget: { used: number; budget: number; remaining: number } | null;
 }) {
-  const [text, setText] = useState('');
   const [pending, startTransition] = useTransition();
+  const [manual, setManual] = useState('');
+  const [showManual, setShowManual] = useState(false);
+  const [form, setForm] = useState({
+    enabled: settings?.usdc_enabled ?? false,
+    markupBps: settings?.usdc_markup_bps ?? 0,
+    lowPoolThreshold: settings?.usdc_low_pool_threshold ?? 20,
+    quoteMinutes: settings?.usdc_quote_minutes ?? 15,
+    rateMaxAgeHours: settings?.usdc_rate_max_age_hours ?? 36,
+  });
 
-  // Live validation. Splitting on any whitespace or comma means a pasted
-  // column, a comma-separated list, or one-per-line all behave the same.
-  const lines = useMemo(
-    () =>
-      text
-        .split(/[\s,;]+/)
-        .map((line) => line.trim())
-        .filter(Boolean),
-    [text],
-  );
+  const fetchedAt = rate?.fetched_at ? new Date(rate.fetched_at) : null;
+  const ageHours = fetchedAt ? (Date.now() - fetchedAt.getTime()) / 3_600_000 : null;
+  const stale = ageHours !== null && ageHours > form.rateMaxAgeHours;
 
-  const problems = useMemo(
-    () =>
-      lines
-        .map((line, index) => ({ index, line, problem: describeAddressProblem(line) }))
-        .filter((entry) => entry.problem !== null),
-    [lines],
-  );
-
-  const duplicates = useMemo(() => {
-    const seen = new Set<string>();
-    const dupes = new Set<string>();
-    lines.forEach((line) => {
-      if (seen.has(line)) dupes.add(line);
-      seen.add(line);
-    });
-    return dupes;
-  }, [lines]);
-
-  const ready = lines.length > 0 && problems.length === 0 && duplicates.size === 0;
-
-  function submit() {
+  function save() {
     startTransition(async () => {
-      const result = await addUsdcAddresses(text);
-      if (result.ok) {
-        toast.success(result.message);
-        setText('');
-      } else {
-        toast.error(result.message);
-      }
+      const result = await saveUsdcSettings(form);
+      result.ok ? toast.success(result.message) : toast.error(result.message);
     });
   }
 
-  function retire(id: string, address: string) {
-    if (!confirm(`Retire ${shortenAddress(address)}? It will never be handed out again.`)) return;
-
+  function refresh() {
     startTransition(async () => {
-      const result = await retireUsdcAddress(id, 'Retired from the admin panel');
+      const result = await refreshRateNow();
       result.ok ? toast.success(result.message) : toast.error(result.message);
     });
   }
 
   return (
-    <div className="space-y-6">
-      {stats.low && stats.available > 0 && (
-        <Card className="border-[var(--warning)]/50 bg-[var(--warning)]/8 p-4">
-          <p className="flex items-center gap-2 text-sm font-medium">
-            <AlertTriangle className="size-4" aria-hidden />
-            Only {stats.available} unused {stats.available === 1 ? 'address' : 'addresses'} left.
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Add more below. If the pool empties, USDC stops being offered at checkout and customers
-            see Interac e-Transfer only.
-          </p>
-        </Card>
-      )}
-
-      {stats.available === 0 && stats.enabled && (
-        <Card className="border-[var(--destructive)]/50 bg-[var(--destructive)]/8 p-4">
-          <p className="flex items-center gap-2 text-sm font-medium">
-            <AlertTriangle className="size-4" aria-hidden />
-            The pool is empty — USDC is not being offered.
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Existing orders are unaffected. New customers see Interac e-Transfer only until you add
-            addresses.
-          </p>
-        </Card>
-      )}
-
-      <Card className="p-5">
-        <h3 className="font-display text-base font-semibold">Add payment addresses</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Generate these in your wallet app on your phone and paste the public addresses here. One
-          per line. Never paste a seed phrase or a private key — nothing on this page needs one.
-        </p>
-
-        <Textarea
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          rows={8}
-          spellCheck={false}
-          placeholder={'9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM\n7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU'}
-          className="mt-4 font-mono text-xs"
-          aria-describedby="paste-status"
-        />
-
-        <div id="paste-status" aria-live="polite" className="mt-3 space-y-2 text-sm">
-          {lines.length === 0 && (
-            <p className="text-muted-foreground">Nothing pasted yet.</p>
-          )}
-
-          {lines.length > 0 && problems.length === 0 && duplicates.size === 0 && (
-            <p className="flex items-center gap-2 text-[var(--success,green)]">
-              <Check className="size-4" aria-hidden />
-              {lines.length} {lines.length === 1 ? 'address looks' : 'addresses look'} valid.
+    <Card className="space-y-5 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="font-display text-lg font-semibold">Exchange rate</h2>
+          {rate?.fetched_at && Number(rate.cad_per_usdc) > 0 ? (
+            <>
+              <p className="mt-1 tabular text-2xl font-bold">
+                1 USDC = {Number(rate.cad_per_usdc).toFixed(4)} CAD
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {ageHours !== null && ageHours < 1
+                  ? 'Updated in the last hour'
+                  : `Updated about ${Math.round(ageHours ?? 0)} hours ago`}
+                {rate.source ? ` from ${rate.source}` : ''}.
+                {stale && ' Too old to quote from — USDC is hidden at checkout until it refreshes.'}
+              </p>
+            </>
+          ) : (
+            <p className="mt-1 text-sm text-muted-foreground">
+              No rate yet. Refresh before turning USDC on.
             </p>
           )}
-
-          {duplicates.size > 0 && (
-            <p className="text-[var(--destructive)]">
-              The same address appears more than once: {shortenAddress([...duplicates][0])}
+          {rate?.last_error ? (
+            <p className="mt-2 text-sm text-[var(--destructive)]">
+              Last refresh failed: {rate.last_error}
             </p>
-          )}
+          ) : null}
 
-          {problems.length > 0 && (
-            <ul className="space-y-1 text-[var(--destructive)]">
-              {problems.slice(0, 6).map((entry) => (
-                <li key={entry.index}>
-                  Line {entry.index + 1}: {entry.problem}
-                </li>
-              ))}
-              {problems.length > 6 && <li>…and {problems.length - 6} more.</li>}
-            </ul>
-          )}
+          {/* Says when it last tried, not just when it last succeeded. Without
+              this, a rate that stops updating looks identical to one that is
+              updating fine and simply has not moved. */}
+          <p className="mt-1 text-xs text-muted-foreground">
+            {rate?.last_attempt_at
+              ? `Last checked ${formatDateTime(rate.last_attempt_at)}.`
+              : 'Not checked automatically yet.'}{' '}
+            The rate refreshes itself when the shop is visited and the figure has aged.
+          </p>
         </div>
 
-        <div className="mt-4 flex items-center gap-3">
-          <Button onClick={submit} disabled={!ready || pending}>
-            <Plus className="size-4" aria-hidden />
-            {pending ? 'Adding…' : `Add ${lines.length || ''} to the pool`}
+        <div className="flex flex-col items-end gap-2">
+          <Button variant="outline" onClick={refresh} disabled={pending}>
+            <RefreshCw className={pending ? 'size-4 animate-spin' : 'size-4'} aria-hidden />
+            Refresh now
           </Button>
-          {lines.length > 0 && (
-            <Button variant="ghost" onClick={() => setText('')} disabled={pending}>
-              Clear
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline underline-offset-2"
+            onClick={() => setShowManual((v) => !v)}
+          >
+            {showManual ? 'Hide' : 'Set the rate by hand'}
+          </button>
+        </div>
+      </div>
+
+      {/* A way through when no rate service answers. Better than a shop being
+          unable to take payment because a third party is down or is blocking
+          the datacentre this runs in. */}
+      {showManual ? (
+        <div className="rounded-lg border border-border bg-muted/40 p-4">
+          <Label htmlFor="manual-rate">CAD per 1 USDC</Label>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <Input
+              id="manual-rate"
+              value={manual}
+              placeholder="1.37"
+              inputMode="decimal"
+              className="max-w-[10rem]"
+              onChange={(event) => setManual(event.target.value)}
+            />
+            <Button
+              variant="secondary"
+              disabled={pending || manual.trim() === ''}
+              onClick={() =>
+                startTransition(async () => {
+                  const result = await setRateManually(manual);
+                  if (result.ok) {
+                    toast.success(result.message);
+                    setManual('');
+                    setShowManual(false);
+                  } else {
+                    toast.error(result.message);
+                  }
+                })
+              }
+            >
+              Use this rate
             </Button>
-          )}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Look up &ldquo;USDC to CAD&rdquo; and enter what you find. It ages out on the same
+            schedule as a fetched rate, so set it again if the automatic refresh stays down.
+          </p>
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 border-t pt-5 sm:grid-cols-2">
+        <label className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            checked={form.enabled}
+            onChange={(event) => setForm({ ...form, enabled: event.target.checked })}
+            className="mt-1 size-4 accent-[var(--primary)]"
+          />
+          <span>
+            <span className="text-sm font-medium">Offer USDC at checkout</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              {available === 0
+                ? 'You need at least one unused address before this can be switched on.'
+                : `${available} unused ${available === 1 ? 'address' : 'addresses'} ready.`}
+            </span>
+          </span>
+        </label>
+
+        <div>
+          <Label htmlFor="markup">Markup on the rate (%)</Label>
+          <Input
+            id="markup"
+            type="number"
+            step="0.01"
+            min="0"
+            max="50"
+            value={(form.markupBps / 100).toString()}
+            onChange={(event) =>
+              setForm({ ...form, markupBps: Math.round(Number(event.target.value) * 100) })
+            }
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Leave at 0 for the straight converted amount.
+          </p>
         </div>
 
-        <p className="mt-4 rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
-          Worth knowing: a Solana address has no built-in checksum, so these checks catch a bad
-          character set, a wrong length, and about half of single-character slips — but not every
-          one. Send a small test payment to the first address before you rely on a new batch.
-        </p>
-      </Card>
+        <div>
+          <Label htmlFor="quote-minutes">Quote holds for (minutes)</Label>
+          <Input
+            id="quote-minutes"
+            type="number"
+            min="1"
+            max="1440"
+            value={form.quoteMinutes}
+            onChange={(event) => setForm({ ...form, quoteMinutes: Number(event.target.value) })}
+          />
+        </div>
 
-      <Card className="p-5">
-        <h3 className="font-display text-base font-semibold">
-          Addresses <span className="text-muted-foreground">({stats.total})</span>
-        </h3>
+        <div>
+          <Label htmlFor="low-pool">Warn when addresses drop below</Label>
+          <Input
+            id="low-pool"
+            type="number"
+            min="0"
+            value={form.lowPoolThreshold}
+            onChange={(event) =>
+              setForm({ ...form, lowPoolThreshold: Number(event.target.value) })
+            }
+          />
+        </div>
+      </div>
 
-        {addresses.length === 0 ? (
-          <p className="mt-3 text-sm text-muted-foreground">
-            No addresses yet. Add some above to start taking USDC.
-          </p>
-        ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground">
-                  <th className="py-2 pr-3 font-medium">#</th>
-                  <th className="py-2 pr-3 font-medium">Address</th>
-                  <th className="py-2 pr-3 font-medium">Status</th>
-                  <th className="py-2 pr-3 font-medium">Assigned</th>
-                  <th className="py-2 font-medium sr-only">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {addresses.map((address) => (
-                  <tr key={address.id} className="border-b border-border/50 last:border-0">
-                    <td className="py-2 pr-3 font-mono text-xs text-muted-foreground">
-                      {address.position}
-                    </td>
-                    <td className="py-2 pr-3 font-mono text-xs" title={address.address}>
-                      {shortenAddress(address.address)}
-                    </td>
-                    <td className="py-2 pr-3">
-                      {address.is_retired ? (
-                        <Badge variant="outline">Retired</Badge>
-                      ) : address.order_id ? (
-                        <Badge variant="secondary">In use</Badge>
-                      ) : (
-                        <Badge>Available</Badge>
-                      )}
-                    </td>
-                    <td className="py-2 pr-3 text-xs text-muted-foreground">
-                      {address.assigned_at
-                        ? new Date(address.assigned_at).toLocaleDateString('en-CA')
-                        : '—'}
-                    </td>
-                    <td className="py-2 text-right">
-                      {!address.is_retired && !address.order_id && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => retire(address.id, address.address)}
-                          disabled={pending}
-                        >
-                          <X className="size-4" aria-hidden />
-                          Retire
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
-    </div>
+      <Button onClick={save} disabled={pending}>
+        {pending ? 'Saving…' : 'Save payment settings'}
+      </Button>
+    </Card>
   );
 }
