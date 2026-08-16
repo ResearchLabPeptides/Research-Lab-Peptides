@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { UsdcAddressManager } from '@/components/admin/usdc-address-manager';
 import { UsdcRatePanel } from '@/components/admin/usdc-rate-panel';
 import { formatUsdc } from '@/lib/solana';
+import { formatDateTime } from '@/lib/format';
 import type { UsdcAddress, UsdcPoolStats } from '@/lib/types';
 
 export const metadata = { title: 'Payments' };
@@ -118,7 +119,7 @@ export default async function PaymentsPage() {
                     </td>
                     <td className="px-4 py-3 font-mono text-xs break-all">{order.usdc_address}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {new Date(order.placed_at).toLocaleString('en-CA')}
+                      {formatDateTime(order.placed_at)}
                     </td>
                   </tr>
                 ))}
