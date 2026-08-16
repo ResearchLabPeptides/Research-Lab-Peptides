@@ -25,9 +25,28 @@ export function formatMoneyCompact(cents: number, currency = DEFAULT_CURRENCY): 
   }).format(cents / 100);
 }
 
+/**
+ * The shop's timezone.
+ *
+ * Timestamps are stored in UTC, and without naming a zone here the formatter
+ * uses whatever the machine rendering the page thinks is local. In the browser
+ * that is the visitor's own clock; on the server it is UTC, because that is how
+ * Vercel's runtime is configured. The result is an order placed at 7:30pm
+ * showing as 2:30am the following day on any page rendered server-side, and
+ * correctly in the same shop elsewhere.
+ *
+ * Fixed to the business's own zone rather than the visitor's, deliberately. An
+ * order placed at 7:30pm Pacific should read 7:30pm to the staff packing it and
+ * to the customer who placed it, whichever province either happens to be in.
+ * The alternative — everyone sees their own local time — sounds friendlier and
+ * makes it impossible for two people to talk about the same order.
+ */
+const SHOP_TIME_ZONE = process.env.NEXT_PUBLIC_SHOP_TIMEZONE || 'America/Vancouver';
+
 export function formatDate(value: string | Date): string {
   return new Intl.DateTimeFormat(DEFAULT_LOCALE, {
     dateStyle: 'medium',
+    timeZone: SHOP_TIME_ZONE,
   }).format(new Date(value));
 }
 
@@ -35,6 +54,7 @@ export function formatDateTime(value: string | Date): string {
   return new Intl.DateTimeFormat(DEFAULT_LOCALE, {
     dateStyle: 'medium',
     timeStyle: 'short',
+    timeZone: SHOP_TIME_ZONE,
   }).format(new Date(value));
 }
 
