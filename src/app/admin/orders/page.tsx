@@ -106,15 +106,13 @@ export default async function OrdersPage({
                       <OrderStatusBadge status={order.status} />
                     </td>
                     <td className="px-4 py-3">
-                      <PaymentStatusBadge status={order.payment_status} />
-                    <PaymentMethodBadge
-                      method={order.payment_method}
-                      cryptoDiscountCents={order.crypto_discount_cents}
-                    />
-                      <PaymentMethodBadge
-                        method={order.payment_method}
-                        cryptoDiscountCents={order.crypto_discount_cents}
-                      />
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <PaymentStatusBadge status={order.payment_status} />
+                        <PaymentMethodBadge
+                          method={order.payment_method}
+                          cryptoDiscountCents={order.crypto_discount_cents}
+                        />
+                      </div>
                     </td>
                     <td className="tabular px-4 py-3 text-right font-semibold">
                       {formatMoney(order.total_cents)}
@@ -157,6 +155,10 @@ export default async function OrdersPage({
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     <OrderStatusBadge status={order.status} />
                     <PaymentStatusBadge status={order.payment_status} />
+                    <PaymentMethodBadge
+                      method={order.payment_method}
+                      cryptoDiscountCents={order.crypto_discount_cents}
+                    />
                   </div>
                 </Link>
               </li>
