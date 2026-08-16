@@ -97,25 +97,30 @@ export async function sendTemplatedEmail(
 ): Promise<void> {
   try {
     const supabase = createServiceClient();
-    const { data } = await supabase
-      .from('email_templates')
-      .select('subject, body, is_active')
-      .eq('key', key)
-      .maybeSingle();
+
+    // A security definer function, not a table read. Sending happens with no
+    // session, and the only read policy on email_templates is for signed-in
+    // staff — so the table read depended on the service role key bypassing row
+    // level security and reported "no template" when the row was there all
+    // along. The function returns nothing for an inactive template, so
+    // switching one off in the dashboard still stops it being sent.
+    const { data, error } = await supabase.rpc('email_template_for_send', { p_key: key });
+
+    if (error) {
+      console.error(`[email] could not read the "${key}" template:`, error.message);
+      return;
+    }
 
     if (!data) {
-      console.warn(`[email] no template for "${key}" — nothing sent`);
-      return;
-    }
-    if (!data.is_active) {
-      // Switched off on purpose — but say so. Silence here is indistinguishable
-      // from a broken provider, and someone will spend an afternoon on it.
-      console.warn(`[email] template "${key}" is switched off — nothing sent`);
+      console.warn(
+        `[email] no active template for "${key}" — nothing sent. Check it exists and is switched on under Emails.`,
+      );
       return;
     }
 
-    const subject = renderTemplate(data.subject as string, vars);
-    const text = renderTemplate(data.body as string, vars);
+    const template = data as { subject: string; body: string };
+    const subject = renderTemplate(template.subject, vars);
+    const text = renderTemplate(template.body, vars);
     await deliver(to, subject, text, toHtml(text, vars.company_name, vars.track_url));
   } catch (error) {
     console.error('[email] could not build message', key, error);
