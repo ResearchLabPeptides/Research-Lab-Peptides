@@ -21,39 +21,40 @@ async function loadVars(
 ): Promise<{ to: string; vars: TemplateVars } | null> {
   const supabase = createServiceClient();
 
-  const [
-    { data: order, error: orderError },
-    { data: items, error: itemsError },
-    { data: settings, error: settingsError },
-  ] = await Promise.all([
-    supabase.from('orders').select('*').eq('id', orderId).maybeSingle(),
-    supabase
-      .from('order_items')
-      .select('name, quantity, line_total_cents')
-      .eq('order_id', orderId)
-      .order('name'),
-    supabase
-      .from('settings')
-      .select('company_name, payment_email, crypto_discount_label')
-      .maybeSingle(),
-  ]);
+  // One call to a security definer function instead of three table reads.
+  //
+  // The email path has no session, and the only read policy on `orders` is for
+  // signed-in staff — so those reads depended entirely on the service role key
+  // bypassing row level security. When that key is wrong they return empty with
+  // no error, which is indistinguishable from the order not existing, and the
+  // confirmation silently never sends. This asks the database for one specific
+  // order by id and gets the same answer regardless of which key is in play.
+  const { data: payload, error } = await supabase.rpc('order_for_email', {
+    p_order_id: orderId,
+  });
 
-  // Reported, not discarded. These reads go through the service role key, so
-  // when that key is wrong they are refused by row level security and every one
-  // of them comes back empty — which used to look exactly like "no such order".
-  if (orderError) console.error('[email] could not read the order:', orderError.message);
-  if (itemsError) console.error('[email] could not read the order items:', itemsError.message);
-  if (settingsError) console.error('[email] could not read settings:', settingsError.message);
-
-  if (!order) {
-    console.error(
-      `[email] no order row came back for ${orderId}.`,
-      orderError
-        ? 'The error above says why.'
-        : 'No error was returned either, which means the row was filtered out — check that SUPABASE_SERVICE_ROLE_KEY in Vercel is the service_role secret, not the anon key.',
-    );
+  if (error) {
+    console.error('[email] could not load the order:', error.message);
     return null;
   }
+
+  if (!payload) {
+    console.error('[email] no order found for', orderId);
+    return null;
+  }
+
+  const loadedOrder = payload as Record<string, unknown>;
+  const order = loadedOrder;
+  const items = (loadedOrder.items ?? []) as {
+    name: string;
+    quantity: number;
+    line_total_cents: number;
+  }[];
+  const settings = (loadedOrder.settings ?? {}) as {
+    company_name?: string;
+    payment_email?: string;
+    crypto_discount_label?: string;
+  };
 
   const o = order as Record<string, unknown>;
   const base = process.env.NEXT_PUBLIC_SITE_URL ?? '';
