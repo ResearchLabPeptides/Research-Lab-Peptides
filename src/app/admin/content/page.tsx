@@ -1,13 +1,12 @@
 import Link from 'next/link';
 import { FileText, Plus } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { PageList, type PageRow } from '@/components/admin/page-list';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ContentEditor } from '@/components/admin/content-editor';
 import { requireStaff } from '@/lib/auth';
 import { getAdminPages, getContentEntries } from '@/lib/queries/admin';
-import { formatRelative } from '@/lib/format';
 
 export const metadata = { title: 'Content' };
 export const dynamic = 'force-dynamic';
@@ -46,7 +45,7 @@ export default async function ContentPage() {
             <EmptyState
               icon={FileText}
               title="No pages yet"
-              description="Add an About, FAQ, or delivery information page and link it in the footer."
+              description="Add an About, FAQ, or shipping information page and link it in the footer."
               action={
                 <Button size="sm" asChild>
                   <Link href="/admin/content/pages/new">Write your first page</Link>
@@ -54,31 +53,7 @@ export default async function ContentPage() {
               }
             />
           ) : (
-            <ul className="divide-y divide-border">
-              {pages.map((page) => (
-                <li key={page.id}>
-                  <Link
-                    href={`/admin/content/pages/${page.id}`}
-                    className="flex items-center justify-between gap-3 py-3 transition-colors hover:text-primary"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-medium">{page.title}</p>
-                        {page.is_published ? (
-                          <Badge tone="green">Published</Badge>
-                        ) : (
-                          <Badge tone="amber">Draft</Badge>
-                        )}
-                        {page.show_in_nav ? <Badge tone="slate">In footer</Badge> : null}
-                      </div>
-                      <p className="font-mono text-xs text-muted-foreground">
-                        /p/{page.slug} · edited {formatRelative(page.updated_at)}
-                      </p>
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <PageList pages={pages as PageRow[]} />
           )}
         </CardContent>
       </Card>
