@@ -52,10 +52,12 @@ const SOURCES: RateSource[] = [
     extract: (b) => (b as { 'usd-coin'?: { cad?: number } })?.['usd-coin']?.cad,
     headers: () => {
       const key = process.env.COINGECKO_API_KEY?.trim();
+      // Typed as an empty object rather than one with an undefined value, so
+      // the header is genuinely absent when there is no key.
       // The header must be absent rather than empty when there is no key:
       // CoinGecko ignores it on the keyless endpoint, but an empty credential
       // is the kind of thing that starts being rejected later.
-      return key ? { 'x-cg-demo-api-key': key } : {};
+      return key ? { 'x-cg-demo-api-key': key } : ({} as Record<string, string>);
     },
   },
   {
