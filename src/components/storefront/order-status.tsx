@@ -12,6 +12,7 @@ import { formatDateTime, formatMoney, formatPostalCode, formatRelative } from '@
 import type { OrderLookupResult } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { PaymentInstructions } from './payment-instructions';
+import { UsdcInstructions } from './usdc-instructions';
 
 export function OrderStatus({
   orderNumber,
@@ -46,10 +47,6 @@ export function OrderStatus({
   }, [orderNumber, email]);
 
   if (failed) {
-  // discount_cents is every discount added together; the crypto part is broken
-  // back out so each one can be named on its own line.
- 
-
     return (
       <EmptyState
         icon={PackageSearch}
@@ -92,6 +89,16 @@ export function OrderStatus({
   const cancelled = result.status === 'cancelled' || result.status === 'refunded';
   const awaitingPayment = result.status === 'pending_payment';
 
+  // Below every guard above, so `result` is known to exist here. An earlier
+  // version of these two lines sat above the guards and read from a null
+  // result, which crashed the page before it could render the "no order
+  // matches" message it was trying to show.
+  //
+  // discount_cents is every discount added together; the crypto part is broken
+  // back out so each one can be named on its own line.
+  const cryptoCents = Number(result.crypto_discount_cents ?? 0);
+  const couponCents = Math.max(0, Number(result.discount_cents ?? 0) - cryptoCents);
+
   return (
     <div className="space-y-6">
       <header className="space-y-2">
@@ -110,12 +117,27 @@ export function OrderStatus({
         </p>
       </header>
 
+      {/* Which instructions depend on how they chose to pay.
+          
+          This branch was missing: UsdcInstructions existed but was never
+          rendered, so a customer who picked USDC was shown the e-Transfer
+          block — an email address to send money to, and no sign of the wallet
+          address their order is waiting on. */}
       {awaitingPayment ? (
-        <PaymentInstructions
-          orderNumber={result.order_number}
-          totalCents={result.total_cents}
-          paymentEmail={paymentEmail}
-        />
+        result.payment_method === 'usdc_solana' && result.usdc ? (
+          <UsdcInstructions
+            orderNumber={result.order_number}
+            email={email}
+            totalCents={result.total_cents}
+            quote={result.usdc}
+          />
+        ) : (
+          <PaymentInstructions
+            orderNumber={result.order_number}
+            totalCents={result.total_cents}
+            paymentEmail={paymentEmail}
+          />
+        )
       ) : null}
 
       {!cancelled ? <ProgressTrail step={meta.step} /> : null}
@@ -147,24 +169,22 @@ export function OrderStatus({
               every discount, so labelling it with the coupon code would credit
               the coupon for a saving the customer got for paying in crypto, and
               the numbers would not match what they were shown at checkout. */}
-       {Number(result.discount_cents ?? 0) - Number(result.crypto_discount_cents ?? 0) > 0 ? (
-  <Line
-    label={
-      result.coupon_code ? `${result.coupon_code} — ${result.coupon_label}` : 'Discount'
-    }
-    value={`-${formatMoney(
-      Number(result.discount_cents ?? 0) - Number(result.crypto_discount_cents ?? 0),
-    )}`}
-    discount
-  />
-) : null}
-{Number(result.crypto_discount_cents ?? 0) > 0 ? (
-  <Line
-    label={result.crypto_discount_label || 'Crypto payment discount'}
-    value={`-${formatMoney(Number(result.crypto_discount_cents ?? 0))}`}
-    discount
-  />
-) : null}
+          {couponCents > 0 ? (
+            <Line
+              label={
+                result.coupon_code ? `${result.coupon_code} — ${result.coupon_label}` : 'Discount'
+              }
+              value={`-${formatMoney(couponCents)}`}
+              discount
+            />
+          ) : null}
+          {cryptoCents > 0 ? (
+            <Line
+              label={result.crypto_discount_label || 'Crypto payment discount'}
+              value={`-${formatMoney(cryptoCents)}`}
+              discount
+            />
+          ) : null}
           <Line
             label={
               result.delivery_discount_label
