@@ -624,3 +624,41 @@ export async function getCustomers(search?: string, mailableOnly = false) {
     mailable: rows.filter((c) => c.can_be_emailed).length,
   };
 }
+
+export interface AdminCategoryRow {
+  id: string;
+  name: string;
+  slug: string;
+  is_active: boolean;
+  product_count: number;
+}
+
+/**
+ * Categories with how many products are in each.
+ *
+ * The count matters on screen: it is what tells someone whether a category is
+ * safe to delete, and why a category they can see here is not showing in the
+ * shop. Includes hidden categories, which the storefront query deliberately
+ * excludes.
+ */
+export async function getAdminCategories(): Promise<AdminCategoryRow[]> {
+  const supabase = await createClient();
+
+  const [{ data: categories, error }, { data: products }] = await Promise.all([
+    supabase.from('categories').select('id, name, slug, is_active').order('sort_order').order('name'),
+    supabase.from('products').select('category_id'),
+  ]);
+
+  if (error) throw new Error(`Could not load categories: ${error.message}`);
+
+  const counts = new Map<string, number>();
+  for (const row of products ?? []) {
+    const id = (row as { category_id: string | null }).category_id;
+    if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+
+  return (categories ?? []).map((c) => ({
+    ...(c as Omit<AdminCategoryRow, 'product_count'>),
+    product_count: counts.get((c as { id: string }).id) ?? 0,
+  }));
+}
