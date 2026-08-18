@@ -47,6 +47,16 @@ export async function POST(request: Request) {
 
   const { customer, items, couponCode, paymentMethod } = parsed.data;
 
+  // Temporary: says what actually arrived and what is being forwarded, so a
+  // browser sending the wrong thing can be told apart from a database ignoring
+  // the right thing. Both look identical from the orders list.
+  console.info(
+    '[checkout] payment method — raw body:',
+    JSON.stringify((payload as { paymentMethod?: unknown })?.paymentMethod),
+    '| after validation:',
+    paymentMethod,
+  );
+
   // Keyed on the email as well, so rotating addresses does not reset the count.
   const byEmail = await checkRateLimit(
     `checkout-email:${customer.email.toLowerCase()}`,
@@ -92,6 +102,16 @@ export async function POST(request: Request) {
       items: [...merged].map(([product_id, quantity]) => ({ product_id, quantity })),
     },
   });
+
+  if (data) {
+    const placed = data as { order_number?: string; payment_method?: string };
+    console.info(
+      '[checkout] order',
+      placed.order_number,
+      'stored as',
+      placed.payment_method ?? '(place_order returned no payment_method)',
+    );
+  }
 
   if (error) {
     // place_order() raises messages written for customers ("Sourdough Loaf only
