@@ -20,7 +20,6 @@ export function UsdcRatePanel({
   rate,
   settings,
   available,
-  budget,
 }: {
   rate: {
     cad_per_usdc: number;
@@ -37,7 +36,6 @@ export function UsdcRatePanel({
     usdc_rate_max_age_hours: number;
   } | null;
   available: number;
-  budget: { used: number; budget: number; remaining: number } | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [manual, setManual] = useState('');
@@ -57,14 +55,22 @@ export function UsdcRatePanel({
   function save() {
     startTransition(async () => {
       const result = await saveUsdcSettings(form);
-      result.ok ? toast.success(result.message) : toast.error(result.message);
+      if (result.ok) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
     });
   }
 
   function refresh() {
     startTransition(async () => {
       const result = await refreshRateNow();
-      result.ok ? toast.success(result.message) : toast.error(result.message);
+      if (result.ok) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
     });
   }
 
