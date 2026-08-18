@@ -16,6 +16,7 @@ import {
   Tag,
   Users,
   Truck,
+  BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { UserRole } from '@/lib/types';
@@ -63,6 +64,22 @@ export function AdminNav({ role }: { role: UserRole }) {
           </Link>
         );
       })}
+
+      {/* The staff manual. Outside the LINKS list because it is a file rather
+          than a section, and served through /admin/manual rather than from
+          public/ so it is only readable by someone signed in. Opens in a new
+          tab so nobody loses the page they were working on, and is available to
+          every role — the people most likely to need it are the ones with the
+          least access. */}
+      <a
+        href="/admin/manual"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <BookOpen className="size-4" aria-hidden />
+        Manual
+      </a>
     </nav>
   );
 }
