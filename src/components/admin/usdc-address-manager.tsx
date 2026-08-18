@@ -85,7 +85,11 @@ export function UsdcAddressManager({
 
     startTransition(async () => {
       const result = await retireUsdcAddress(id, 'Retired from the admin panel');
-      result.ok ? toast.success(result.message) : toast.error(result.message);
+      if (result.ok) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
     });
   }
 
@@ -148,7 +152,7 @@ export function UsdcAddressManager({
 
           {duplicates.size > 0 && (
             <p className="text-[var(--destructive)]">
-              The same address appears more than once: {shortenAddress([...duplicates][0])}
+              The same address appears more than once: {shortenAddress([...duplicates][0] ?? '')}
             </p>
           )}
 
