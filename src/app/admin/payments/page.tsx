@@ -21,7 +21,6 @@ export default async function PaymentsPage() {
 
   const [
     { data: stats },
-    { data: budget },
     { data: addresses },
     { data: settings },
     { data: rate },
@@ -29,7 +28,6 @@ export default async function PaymentsPage() {
   ] =
     await Promise.all([
       supabase.rpc('usdc_pool_stats'),
-      supabase.rpc('fx_call_budget'),
       supabase.from('usdc_addresses').select('*').order('position', { ascending: false }).limit(200),
       supabase.from('settings').select('*').eq('id', true).single(),
       supabase.from('fx_rate_cache').select('*').eq('id', true).single(),
@@ -80,7 +78,6 @@ export default async function PaymentsPage() {
         rate={rate ?? null}
         settings={settings ?? null}
         available={pool.available}
-        budget={(budget as { used: number; budget: number; remaining: number } | null) ?? null}
       />
 
       <section className="space-y-3">
