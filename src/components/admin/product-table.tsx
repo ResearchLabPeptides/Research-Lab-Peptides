@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Loader2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronsUpDown, Loader2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,6 +35,32 @@ const STATUS_LABELS: Record<Status, string> = {
  * a search that is the difference between hiding four products and hiding four
  * hundred, so the bar always names the count and the search term it came from.
  */
+type SortKey = 'name' | 'category' | 'status' | 'quantity' | 'reserved' | 'available' | 'price' | 'expiry';
+
+/** How each column produces something comparable. */
+const SORT_VALUES: Record<SortKey, (p: ProductRow) => string | number | null> = {
+  name: (p) => p.name,
+  category: (p) => p.category_name ?? '',
+  status: (p) => p.status,
+  quantity: (p) => p.quantity,
+  reserved: (p) => p.quantity_reserved,
+  available: (p) => p.quantity_available,
+  price: (p) => p.price_cents,
+  expiry: (p) => (p.expiry_date ? new Date(p.expiry_date).getTime() : null),
+};
+
+/** Text reads better A–Z; numbers and dates are usually wanted high–low first. */
+const DEFAULT_DESC: Record<SortKey, boolean> = {
+  name: false,
+  category: false,
+  status: false,
+  quantity: true,
+  reserved: true,
+  available: true,
+  price: true,
+  expiry: true,
+};
+
 export function ProductTable({
   products,
   canAdjust,
@@ -47,13 +73,57 @@ export function ProductTable({
   search: string;
 }) {
   const router = useRouter();
+  /**
+   * Column sorting.
+   *
+   * Text sorts A–Z, numbers and dates high–low first. That difference is
+   * deliberate: the reason to sort a name is to find one, and the reason to
+   * sort a number is almost always to see the extreme — what is nearly out of
+   * stock, what is most valuable, what expires soonest.
+   */
+  const [sort, setSort] = React.useState<{ key: SortKey; desc: boolean } | null>(null);
+
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [status, setStatus] = React.useState<Status>('archived');
   const [feedback, setFeedback] = React.useState<{ ok: boolean; message: string } | null>(null);
   const [pending, startTransition] = React.useTransition();
   const headerCheckbox = React.useRef<HTMLInputElement>(null);
 
-  const visibleIds = React.useMemo(() => products.map((p) => p.id), [products]);
+  const sorted = React.useMemo(() => {
+    if (!sort) return products;
+
+    const rows = [...products];
+    rows.sort((a, b) => {
+      const av = SORT_VALUES[sort.key](a);
+      const bv = SORT_VALUES[sort.key](b);
+
+      // Blanks last whichever way the column is pointing: a product with no
+      // expiry date is not "the soonest to expire".
+      const aEmpty = av === null || av === undefined || av === '';
+      const bEmpty = bv === null || bv === undefined || bv === '';
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+
+      const result =
+        typeof av === 'number' && typeof bv === 'number'
+          ? av - bv
+          : String(av).localeCompare(String(bv), 'en-CA', { sensitivity: 'base' });
+
+      return sort.desc ? -result : result;
+    });
+    return rows;
+  }, [products, sort]);
+
+  const visibleIds = React.useMemo(() => sorted.map((p) => p.id), [sorted]);
+
+  function toggleSort(key: SortKey) {
+    setSort((prev) =>
+      prev?.key === key
+        ? { key, desc: !prev.desc }
+        : { key, desc: DEFAULT_DESC[key] },
+    );
+  }
 
   // Selections are per-view. Anything filtered out of sight is dropped, so a
   // later bulk action can never touch a row the person cannot see.
@@ -178,28 +248,76 @@ export function ProductTable({
                 </th>
               ) : null}
               <th scope="col" className="px-4 py-2.5 font-medium">
-                Product
+                <SortButton
+                  label="Product"
+                  sortKey="name"
+                  sort={sort}
+                  onSort={toggleSort}
+                  align="left"
+                />
               </th>
               <th scope="col" className="px-4 py-2.5 font-medium">
-                Category
+                <SortButton
+                  label="Category"
+                  sortKey="category"
+                  sort={sort}
+                  onSort={toggleSort}
+                  align="left"
+                />
               </th>
               <th scope="col" className="px-4 py-2.5 font-medium">
-                Status
+                <SortButton
+                  label="Status"
+                  sortKey="status"
+                  sort={sort}
+                  onSort={toggleSort}
+                  align="left"
+                />
               </th>
               <th scope="col" className="px-4 py-2.5 text-right font-medium">
-                On hand
+                <SortButton
+                  label="On hand"
+                  sortKey="quantity"
+                  sort={sort}
+                  onSort={toggleSort}
+                  align="right"
+                />
               </th>
               <th scope="col" className="px-4 py-2.5 text-right font-medium">
-                Held
+                <SortButton
+                  label="Held"
+                  sortKey="reserved"
+                  sort={sort}
+                  onSort={toggleSort}
+                  align="right"
+                />
               </th>
               <th scope="col" className="px-4 py-2.5 text-right font-medium">
-                Available
+                <SortButton
+                  label="Available"
+                  sortKey="available"
+                  sort={sort}
+                  onSort={toggleSort}
+                  align="right"
+                />
               </th>
               <th scope="col" className="px-4 py-2.5 text-right font-medium">
-                Price
+                <SortButton
+                  label="Price"
+                  sortKey="price"
+                  sort={sort}
+                  onSort={toggleSort}
+                  align="right"
+                />
               </th>
               <th scope="col" className="px-4 py-2.5 font-medium">
-                Expiry
+                <SortButton
+                  label="Expiry"
+                  sortKey="expiry"
+                  sort={sort}
+                  onSort={toggleSort}
+                  align="left"
+                />
               </th>
               <th scope="col" className="px-4 py-2.5 text-right font-medium">
                 <span className="sr-only">Actions</span>
@@ -207,7 +325,7 @@ export function ProductTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {products.map((product) => {
+            {sorted.map((product) => {
               const isSelected = selected.has(product.id);
               return (
                 <tr
@@ -307,5 +425,57 @@ export function ProductTable({
         </p>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * A column header that sorts.
+ *
+ * The arrow only appears on the active column — an arrow on every header makes
+ * it impossible to see at a glance which one the table is actually ordered by.
+ * The whole header is the target rather than the arrow, which is a 12px icon
+ * and hopeless to hit on a phone.
+ */
+function SortButton({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  align = 'left',
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: { key: SortKey; desc: boolean } | null;
+  onSort: (key: SortKey) => void;
+  align?: 'left' | 'right';
+}) {
+  const active = sort?.key === sortKey;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      aria-label={`Sort by ${label}`}
+      aria-sort={active ? (sort.desc ? 'descending' : 'ascending') : 'none'}
+      className={cn(
+        'group inline-flex min-h-8 items-center gap-1 font-medium uppercase tracking-wider transition-colors hover:text-foreground',
+        active && 'text-foreground',
+        align === 'right' && 'flex-row-reverse',
+      )}
+    >
+      {label}
+      {active ? (
+        sort.desc ? (
+          <ArrowDown className="size-3.5" aria-hidden />
+        ) : (
+          <ArrowUp className="size-3.5" aria-hidden />
+        )
+      ) : (
+        <ChevronsUpDown
+          className="size-3.5 opacity-0 transition-opacity group-hover:opacity-40"
+          aria-hidden
+        />
+      )}
+    </button>
   );
 }
