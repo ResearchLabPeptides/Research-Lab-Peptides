@@ -5,7 +5,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ProductSearch } from '@/components/admin/product-search';
 import { ProductTable } from '@/components/admin/product-table';
 import { hasMinRole, requireStaff } from '@/lib/auth';
-import { getProducts } from '@/lib/queries/admin';
+import { getAdminCategories, getProducts } from '@/lib/queries/admin';
+import { CategoryManager } from '@/components/admin/category-manager';
 import { formatMoney } from '@/lib/format';
 
 export const metadata = { title: 'Inventory' };
@@ -18,7 +19,7 @@ export default async function ProductsPage({
 }) {
   const profile = await requireStaff();
   const { q } = await searchParams;
-  const products = await getProducts(q);
+  const [products, categories] = await Promise.all([getProducts(q), getAdminCategories()]);
   const canAdjust = hasMinRole(profile.role, 'employee');
   const canManage = hasMinRole(profile.role, 'manager');
 
@@ -52,6 +53,8 @@ export default async function ProductsPage({
       </div>
 
       <ProductSearch defaultQuery={q ?? ''} />
+
+      {canManage ? <CategoryManager categories={categories} /> : null}
 
       {products.length === 0 ? (
         <EmptyState
