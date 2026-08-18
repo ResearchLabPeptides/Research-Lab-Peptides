@@ -92,7 +92,11 @@ export function CryptoDiscountPanel({
         stacks: form.stacks,
         maxCents,
       });
-      result.ok ? toast.success(result.message) : toast.error(result.message);
+      if (result.ok) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
     });
   }
 
