@@ -33,7 +33,7 @@ export function Field({
     .join(' ');
 
   return (
-    <div className={cn('space-y-1.5', className)}>
+    <div className={cn('space-y-1.5 max-lg:space-y-1', className)}>
       <Label htmlFor={id}>
         {label}
         {required ? <span className="ml-0.5 text-destructive">*</span> : null}
