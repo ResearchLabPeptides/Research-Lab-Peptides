@@ -210,7 +210,14 @@ export function OrderRail({
 
   const ticket = (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-border px-4 py-3">
+      {/* Sticky while the sheet scrolls, so the close control and the section
+          name stay put on a phone rather than scrolling away with the form. */}
+      <header
+        className={cn(
+          'flex items-center justify-between border-b border-border bg-card px-4 py-3',
+          mode === 'checkout' && 'max-lg:sticky max-lg:top-0 max-lg:z-10',
+        )}
+      >
         <div className="flex items-center gap-2">
           <Receipt className="size-4 text-primary" aria-hidden />
           <h2 className="font-display text-sm font-semibold uppercase tracking-widest">
@@ -232,16 +239,13 @@ export function OrderRail({
       <div
         className={cn(
           'px-4',
-          // Sizes to its content in checkout so the scrolling region below can
-          // take the remaining height; otherwise both claim flex-1 and the form
-          // is squeezed to a few lines.
-          mode === 'checkout' ? 'max-lg:shrink-0 lg:min-h-0 lg:flex-1' : 'min-h-0 flex-1',
-          // Always scrollable on mobile: the rail is a bottom drawer capped at
-          // 85dvh, so without an inner scroll everything past the first
-          // screenful — payment options, the Place order button — is
-          // unreachable. Only the desktop rail grows to fit the page instead.
-          'overflow-y-auto',
-          mode === 'checkout' ? 'lg:overflow-visible' : '',
+          // On a phone in checkout this scrolls with the sheet rather than
+          // inside itself. Giving it its own scroll while it had no height
+          // limit made it overflow the sheet and push the payment section past
+          // the bottom edge, where nothing could reach it.
+          mode === 'checkout'
+            ? 'max-lg:shrink-0 max-lg:overflow-visible lg:min-h-0 lg:flex-1 lg:overflow-visible'
+            : 'min-h-0 flex-1 overflow-y-auto',
         )}
       >
         {cart.itemCount === 0 ? (
@@ -503,12 +507,10 @@ export function OrderRail({
         <footer
           className={cn(
             'ticket-rule space-y-3 px-4 py-3',
-            // On a phone in checkout the summary, coupon and payment choice
-            // scroll along with the address form rather than sitting in a fixed
-            // block below it — fixed, they took most of the screen and squeezed
-            // the fields into a window a couple of lines tall. The Place order
-            // button is pinned separately, so it stays reachable.
-            mode === 'checkout' && 'max-lg:min-h-0 max-lg:flex-1 max-lg:overflow-y-auto',
+            // Flows after the form in the sheet's single scroll region, so the
+            // summary and payment choice are reached by scrolling down rather
+            // than competing with the form for a fixed share of the height.
+            mode === 'checkout' && 'max-lg:shrink-0',
           )}
         >
           <dl className="space-y-1 text-sm">
@@ -694,7 +696,13 @@ export function OrderRail({
                 )}
               >
                 <div
-                  className={cn('flex flex-col', mode === 'checkout' ? 'h-[96dvh]' : 'h-[85dvh]')}
+                  className={cn(
+                    'flex flex-col',
+                    // One scroll region for the whole sheet in checkout: header,
+                    // form, summary and payment all flow together. Two nested
+                    // scroll areas is what made the lower half unreachable.
+                    mode === 'checkout' ? 'h-[96dvh] overflow-y-auto' : 'h-[85dvh]',
+                  )}
                 >
                   {ticket}
                 </div>
