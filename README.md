@@ -26,7 +26,7 @@ Read this section before you plan around it.
 
 ### Built and verified
 
-- **Database.** 25 migrations, 29 tables, 12 reporting views, 49 functions, and
+- **Database.** 34 migrations, 29 tables, 12 reporting views, 57 functions, and
   RLS on every table. Also shipped concatenated as `supabase/schema.sql` so the
   whole thing installs by pasting one file into the Supabase SQL Editor. Applied
   against PostgreSQL 16 and exercised end to end: order placement, reservation,
@@ -69,6 +69,10 @@ Read this section before you plan around it.
   their last order, with each order restarting the clock; ticking the optional
   box extends that indefinitely. An unsubscribe is absolute and cannot be
   undone from the admin panel, by ordering again, or by ticking the box again.
+- **Staff manual.** A PDF at `private/user-manual.pdf`, served through
+  `/admin/manual` after a session check rather than from `public/`, so it is
+  readable by staff and by nobody else. Linked from the dashboard and the
+  back-office menu.
 - **Plumbing.** Middleware session refresh, role-gated server actions,
   transactional email (logs to console until you add a provider key), CSV export
   for seven reports, CI that type-checks, lints, and builds.
@@ -93,7 +97,7 @@ schema and RLS already support all of them.
 | Realtime subscriptions | Tables are added to the publication; the dashboard currently revalidates per request rather than subscribing. |
 | Automatic USDC verification | Payments are confirmed by a person checking their own wallet. There is no RPC node and nothing reads the Solana network — see the tradeoffs below. |
 | Refunding a USDC payment | Refunds are recorded, but sending USDC back is done by hand from your wallet. |
-| Automated tests in the repo | The 2.0 work was verified against a real PostgreSQL 16 instance and a headless browser — 356 assertions covering pricing, consent, payment confirmation, concurrent address assignment, base58 validation, the checkout UI, and the accuracy of this README. Those harnesses are not checked in, so there is nothing for CI to run beyond typecheck, lint, and build. |
+| Automated tests in the repo | The 2.0 work was verified against a real PostgreSQL 16 instance and a headless browser — assertions covering pricing, consent, payment confirmation, concurrent address assignment, base58 validation, the checkout UI, and the accuracy of this README. The production build (`next build`, including ESLint and a full TypeScript check) is run before any change is considered done — a syntax check alone misses type and lint errors that fail a real deploy. Those harnesses are not checked in, so there is nothing for CI to run beyond typecheck, lint, and build. |
 
 ### Known tradeoffs
 
@@ -144,6 +148,11 @@ schema and RLS already support all of them.
 
 ## Getting it running — entirely in the browser
 
+> **Setting up for the first time?** Follow **[docs/SETUP.md](docs/SETUP.md)**
+> instead of this section. It is the same process written as an ordered
+> checklist, with a verification step after each stage and a troubleshooting
+> list at the end. The steps below are the same thing in reference form.
+
 Nothing runs on your computer. GitHub holds the code, Supabase runs the
 database, and Vercel builds and serves the site. You need three free accounts
 and a web browser.
@@ -154,19 +163,76 @@ and a web browser.
 
 ### 1. Put the code on GitHub
 
-1. Unzip `ordering-platform.zip`.
+Futurelite is 181 files, and GitHub's browser uploader takes **100 at a time**,
+so this goes in three batches. Each one is its own commit, which is fine.
+
+1. Unzip `futurelite-v2_0.zip`. You will get a `futurelite` folder — everything
+   below is inside it.
 2. At [github.com/new](https://github.com/new), create a repository. Leave it
    empty — no README, no .gitignore.
-3. On the next screen choose **uploading an existing file**, then drag in
-   everything from the unzipped folder.
 
-> **One thing the browser uploader skips.** Files whose names begin with a dot
-> are usually hidden from the upload dialog, so `.gitignore` will not make it
-> across. Nothing breaks without it, but add it: **Add file → Create new file**,
-> name it `.gitignore`, and paste the contents of the `.gitignore` in the zip.
->
-> `.env.example`, `.prettierrc`, and `.github/` are only useful if you later
-> work locally. Skip them for now.
+> **Read this before you drag anything.** GitHub keeps the name of the folder
+> you drop, but not the folders above it. Drop `src/components` and you get
+> `components/` at the top level, not `src/components/` — and every import in
+> the app breaks. Batches 2 and 3 avoid that by uploading *into* `src` rather
+> than at the top level.
+
+**Batch 1 — at the top level (47 files).**
+On the new repository's page choose **uploading an existing file**, then drag in:
+
+- all 15 loose files from the `futurelite` folder (`package.json`, `README.md`,
+  `demo.html`, and so on)
+- the `docs` folder
+- the `supabase` folder
+
+Commit.
+
+**Batch 2 — into `src` (58 files).**
+Go to this address, replacing the two capitalised parts:
+
+```
+https://github.com/YOUR-NAME/YOUR-REPO/upload/main/src
+```
+
+That page puts whatever you drop into the `src` folder. Drag in the
+**`components`** folder and commit.
+
+**Batch 3 — into `src` again (75 files).**
+Same address. Drag in the **`app`** folder, the **`lib`** folder, and the single
+file **`middleware.ts`**. Commit.
+
+**Then add `.gitignore` by hand.** Files starting with a dot are hidden by most
+file browsers, so it will not have come across. It matters: without it a later
+upload could commit `node_modules`. Use **Add file → Create new file**, name it
+`.gitignore`, and paste the contents of the `.gitignore` in the zip.
+
+`.env.example` and `.prettierrc` are hidden for the same reason and only matter
+if you later work locally. `.github/workflows/ci.yml` is optional too — it runs
+typecheck and lint on GitHub and changes nothing about the deployed site.
+
+**Check the tree before moving on.** Your repository should look like this:
+
+```
+README.md, package.json, demo.html, …
+docs/
+supabase/
+  migrations/        ← 25 .sql files
+  schema.sql
+src/
+  app/
+  components/
+  lib/
+  middleware.ts
+```
+
+If `app/`, `components/` or `lib/` ended up at the top level instead of inside
+`src/`, that is the trap above. Delete those folders and redo that batch from
+the `/upload/main/src` address.
+
+> **You do not need any of this to look at the app.** `demo.html` is standalone
+> — open it straight from your Downloads folder in any browser and the whole
+> thing works, storefront and back office, including the USDC flow. GitHub and
+> Supabase are only needed for a real shop taking real orders.
 
 ### 2. Create the database
 
@@ -206,6 +272,7 @@ Find the first three under **Supabase → Project Settings → API**:
 | `GATE_SECRET` | The string from step 2 |
 | `NEXT_PUBLIC_SITE_URL` | `https://your-project.vercel.app` — set it after the first deploy, then redeploy |
 | `CRON_SECRET` | Any long random string. Protects the daily exchange-rate refresh. Only needed if you turn USDC on; Vercel offers to set it for you when you add a cron job. |
+| `COINGECKO_API_KEY` | Optional but recommended if you take USDC. A free Demo key from [coingecko.com/en/api/pricing](https://www.coingecko.com/en/api/pricing), no card required. Without it the rate lookup shares a 5–15 calls-per-minute pool with every other project on this datacentre's IPs, which is the usual cause of the rate failing to update. With it you get 10,000 calls a month to yourself; this shop uses about 300. |
 
 There is deliberately **no seed phrase, no private key, and no RPC URL** in that
 list. If something ever asks you for one, it is not this application.
@@ -247,6 +314,34 @@ where email = 'you@yourbusiness.ca';
 A trigger creates every new account at the lowest role, so an account can never
 promote itself. This is the only time you need the SQL editor after setup —
 everything else is done in the app.
+
+> **If the update reports 0 rows, or `/admin` sends you back to the login page
+> after a successful sign-in**, the account has no profile row. The trigger only
+> fires for accounts created *after* `schema.sql` was run — so if you added
+> yourself in Supabase first and set the database up afterwards, there is
+> nothing to promote.
+>
+> Check with:
+>
+> ```sql
+> select u.email, p.id is not null as has_profile, p.role, p.is_active
+> from auth.users u
+> left join profiles p on p.id = u.id;
+> ```
+>
+> If `has_profile` is false, create it:
+>
+> ```sql
+> insert into profiles (id, email, full_name, role, is_active)
+> select id, email, 'Your Name', 'administrator', true
+> from auth.users
+> where email = 'you@yourbusiness.ca'
+> on conflict (id) do update
+>   set role = 'administrator', is_active = true;
+> ```
+>
+> If `has_profile` is true but the role is wrong, re-run the update above and
+> check the email matches exactly. If `is_active` is false, set it true.
 
 ### 6. Open the shop
 
@@ -320,6 +415,7 @@ light and dark modes are defined; the toggle is in both headers.
 
 | Document | Read it when |
 | --- | --- |
+| **[docs/SETUP.md](docs/SETUP.md)** | You are setting this up for the first time. Ordered checklist, a check after every stage, and what to do when something goes wrong. |
 | **[docs/USER-MANUAL.md](docs/USER-MANUAL.md)** | You are running the store — taking payments, adding products, managing stock. Written for staff, no technical knowledge assumed. |
 | **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** | The pre-launch checklist, and what to verify after deploying. |
 | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | You are changing the code. Explains why totals are computed in Postgres and where the security boundary sits. |
@@ -358,7 +454,7 @@ src/
     solana.ts                   address validation; no keys, no network
     fx.ts                       CAD/USDC rate, fetched daily and cached
 supabase/
-  migrations/                   25 migrations, in order
+  migrations/                   34 migrations, in order
   schema.sql                    all of them concatenated, for one-paste setup
   seed.sql                      sample catalog and delivery zones
 ```
