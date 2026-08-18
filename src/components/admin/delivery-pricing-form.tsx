@@ -34,7 +34,7 @@ const CONDITION_LABELS: Record<Condition, string> = {
 };
 
 const EFFECT_LABELS: Record<Effect, string> = {
-  free: 'Delivery is free',
+  free: 'Shipping is free',
   set_fee: 'Charge this flat amount instead',
   amount_off: 'Take this much off the fee',
   percent_off: 'Take this percentage off the fee',
@@ -56,7 +56,7 @@ function describe(m: {
 
   const then =
     m.effect === 'free'
-      ? 'delivery is free'
+      ? 'shipping is free'
       : m.effect === 'set_fee'
         ? `delivery costs ${formatMoney(m.amount)}`
         : m.effect === 'amount_off'
@@ -85,7 +85,7 @@ export function DeliveryPricingForm({
         <CardHeader>
           <CardTitle>Base shipping charge</CardTitle>
           <p className="text-sm text-muted-foreground">
-            What delivery costs before any rule below is applied.
+            What shipping costs before any rule below is applied.
           </p>
         </CardHeader>
         <CardContent>
@@ -135,7 +135,7 @@ export function DeliveryPricingForm({
 
             <CheckboxField
               id="d-restrict"
-              label="Only deliver to the postal codes listed below"
+              label="Only ship to the postal codes listed below"
               description="Leave off to accept every address at the same flat rate. Turn it on and anything unlisted is refused at checkout."
               checked={restrict}
               onChange={setRestrict}
@@ -242,7 +242,7 @@ function ModifierManager({
     <Card>
       <CardHeader className="flex-row items-start justify-between gap-2 space-y-0">
         <div>
-          <CardTitle>Free and discounted delivery</CardTitle>
+          <CardTitle>Free and discounted shipping</CardTitle>
           <p className="text-sm text-muted-foreground">
             Reward bigger orders. If several rules match, the customer gets the cheapest.
           </p>
@@ -323,7 +323,7 @@ function ModifierManager({
                 label={thresholdIsMoney ? 'Subtotal' : 'Number of items'}
                 hint={
                   thresholdIsMoney
-                    ? 'Before delivery and tax'
+                    ? 'Before shipping and tax'
                     : 'Total units in the basket, not distinct products'
                 }
                 required
