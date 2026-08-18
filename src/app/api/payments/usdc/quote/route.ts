@@ -14,7 +14,7 @@ import { refreshQuoteSchema } from '@/lib/validation';
  * endpoint, so this cannot be used to discover which order numbers exist.
  */
 export async function POST(request: Request) {
-  const limit = await checkRateLimit(`usdc-quote:${callerKey(request)}`, LIMITS.orderLookup);
+  const limit = await checkRateLimit(`usdc-quote:${callerKey(request)}`, LIMITS.lookup);
   if (!limit.allowed) {
     return tooManyRequests(limit, 'Too many attempts. Wait a moment and try again.');
   }
