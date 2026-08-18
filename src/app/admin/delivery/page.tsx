@@ -6,7 +6,7 @@ import { requireStaff } from '@/lib/auth';
 import { getDeliveryConfig, getDeliveryPricing } from '@/lib/queries/admin';
 import { formatMoney } from '@/lib/format';
 
-export const metadata = { title: 'Delivery' };
+export const metadata = { title: 'Shipping' };
 export const dynamic = 'force-dynamic';
 
 const MATCH_LABELS: Record<string, string> = {
@@ -29,9 +29,9 @@ export default async function DeliveryPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="font-display text-2xl font-bold tracking-tight">Delivery</h1>
+        <h1 className="font-display text-2xl font-bold tracking-tight">Shipping</h1>
         <p className="text-sm text-muted-foreground">
-          What delivery costs, who gets it free, and where you deliver. Changes apply to the next
+          What shipping costs, who gets it free, and where you ship. Changes apply to the next
           order immediately — no deploy needed.
         </p>
       </div>
@@ -41,7 +41,7 @@ export default async function DeliveryPage() {
       {showAreas ? (
         <>
           <div>
-            <h2 className="font-display text-lg font-semibold tracking-tight">Where you deliver</h2>
+            <h2 className="font-display text-lg font-semibold tracking-tight">Where you ship</h2>
             <p className="text-sm text-muted-foreground">
               {pricing?.delivery_mode === 'zones'
                 ? 'Each zone carries its own price. Rules decide which addresses land in which zone.'
@@ -121,7 +121,7 @@ export default async function DeliveryPage() {
         </>
       ) : (
         <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-          You are delivering everywhere at one flat rate. Turn on the area restriction above to
+          You are shipping everywhere at one flat rate. Turn on the area restriction above to
           limit which postal codes can order.
         </p>
       )}
