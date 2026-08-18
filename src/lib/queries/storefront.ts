@@ -71,10 +71,10 @@ export async function getPublicSettings(): Promise<PublicSettings> {
   const [{ data, error }, { data: usdcOk }] = await Promise.all([
     supabase
       .from('settings')
+      // One literal, not a concatenation — supabase-js reads this string at
+      // compile time to infer the row type, and joining strings defeats it.
       .select(
-        'company_name, currency, tax_rate_bps, payment_email, support_phone, logo_url, ' +
-          'crypto_discount_enabled, crypto_discount_bps, crypto_discount_label, ' +
-          'crypto_discount_stacks, crypto_discount_max_cents',
+        'company_name, currency, tax_rate_bps, payment_email, support_phone, logo_url, crypto_discount_enabled, crypto_discount_bps, crypto_discount_label, crypto_discount_stacks, crypto_discount_max_cents',
       )
       .single(),
     supabase.rpc('usdc_available'),
