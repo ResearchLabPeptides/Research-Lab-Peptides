@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import {
   AlertTriangle,
+  BookOpen,
   Download,
   FileSpreadsheet,
   Boxes,
@@ -77,7 +78,7 @@ export default async function DashboardPage() {
           tone={metrics?.pending_payments ? 'warning' : 'default'}
         />
         <StatCard
-          label="To deliver"
+          label="To ship"
           value={String(metrics?.pending_deliveries ?? 0)}
           hint="Preparing or on the road"
           icon={Truck}
@@ -222,6 +223,26 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Last thing on the dashboard on purpose: useful to have within reach,
+          not something to step over on the way to the day's orders. */}
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-4 py-5">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Staff manual</p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              How to run the shop day to day — taking payment, stock, coupons, answering customer
+              questions. Written for staff, no technical knowledge assumed.
+            </p>
+          </div>
+          <Button variant="outline" asChild>
+            <a href="/admin/manual" target="_blank" rel="noopener noreferrer">
+              <BookOpen className="size-4" aria-hidden />
+              Open the manual
+            </a>
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }
