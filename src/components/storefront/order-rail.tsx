@@ -58,7 +58,18 @@ export function OrderRail({
   const [errors, setErrors] = React.useState<Partial<Record<keyof CheckoutInput, string>>>({});
   const [submitting, setSubmitting] = React.useState(false);
   const [serverError, setServerError] = React.useState<string | null>(null);
-  const [summaryOpen, setSummaryOpen] = React.useState(true);
+  /**
+   * The item list inside checkout, collapsed to start.
+   *
+   * It is open on a wide screen, where there is room for it alongside the form,
+   * and closed on a phone, where it pushed the first field below the fold. By
+   * the time someone reaches checkout they have decided what they are buying —
+   * the thing they need in front of them is the address form. The header still
+   * shows the total, and one tap brings the list back.
+   */
+  const [summaryOpen, setSummaryOpen] = React.useState(
+    typeof window === 'undefined' ? true : window.innerWidth >= 1024,
+  );
   const [coupon, setCoupon] = React.useState<AppliedCoupon | null>(null);
   const [payMethod, setPayMethod] = React.useState<PaymentMethod>('interac');
 
@@ -294,7 +305,12 @@ export function OrderRail({
             ))}
           </ul>
         ) : (
-          <form id="checkout-form" onSubmit={submit} className="space-y-3 py-3" noValidate>
+          <form
+            id="checkout-form"
+            onSubmit={submit}
+            className="space-y-3 py-3 max-lg:space-y-2.5"
+            noValidate
+          >
             {/* What they are buying, still editable. Sending someone back to a
                 separate screen to change a quantity is how orders get abandoned. */}
             <section className="rounded-lg border border-border">
@@ -380,7 +396,9 @@ export function OrderRail({
               />
             </Field>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            {/* Two across from 420px up: both are short, and stacking them
+                costs a full row on a phone for no benefit. */}
+            <div className="grid gap-3 min-[420px]:grid-cols-2 max-lg:gap-2.5">
               <Field id="co-email" label="Email" error={errors.email} required>
                 <Input
                   type="email"
@@ -425,7 +443,7 @@ export function OrderRail({
                 the three-column version leaves the province select about 120px,
                 which is not enough for "British Columbia", and squeezes city to
                 72px. The tighter row only applies once there is room for it. */}
-            <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3 sm:grid-cols-[4.5rem_minmax(0,1fr)_5rem] sm:gap-2">
+            <div className="grid grid-cols-1 min-[360px]:grid-cols-2 gap-3 max-lg:gap-2.5 sm:grid-cols-[4.5rem_minmax(0,1fr)_5rem] sm:gap-2">
               <Field id="co-city" label="City" error={errors.city} required>
                 <Input
                   value={form.city}
