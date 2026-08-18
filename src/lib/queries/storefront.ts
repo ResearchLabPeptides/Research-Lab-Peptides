@@ -36,14 +36,30 @@ export async function getStorefrontProducts(): Promise<StorefrontProduct[]> {
 
 export async function getCategories(): Promise<Category[]> {
   const supabase = await createClient();
+  // An empty category is a dead end: a customer taps it and lands on nothing.
+  // The inner select counts active, in-stock products, and a category with none
+  // is dropped from the storefront — it stays in the dashboard, so staff can
+  // still see it and add products to it.
   const { data, error } = await supabase
     .from('categories')
-    .select('id, name, slug, description, sort_order, is_active')
+    .select('id, name, slug, description, sort_order, is_active, products!inner(id)')
     .eq('is_active', true)
+    .eq('products.status', 'active')
+    .gt('products.quantity', 0)
     .order('sort_order');
 
   if (error) throw new Error(`Could not load categories: ${error.message}`);
-  return (data ?? []) as Category[];
+
+  // The join returns one row per product; collapse to one row per category.
+  const seen = new Set<string>();
+  return (data ?? [])
+    .filter((row) => {
+      const id = (row as { id: string }).id;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .map(({ products: _products, ...category }) => category) as Category[];
 }
 
 export async function getPublicSettings(): Promise<PublicSettings> {
