@@ -215,10 +215,10 @@ function PaymentMethodBadge({
 }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      <Badge variant={method === 'usdc_solana' ? 'secondary' : 'outline'}>
+      <Badge tone={method === 'usdc_solana' ? 'blue' : 'slate'}>
         {method === 'usdc_solana' ? 'USDC' : 'e-Transfer'}
       </Badge>
-      {cryptoDiscountCents > 0 ? <Badge variant="outline">Crypto discount</Badge> : null}
+      {cryptoDiscountCents > 0 ? <Badge tone="green">Crypto discount</Badge> : null}
     </span>
   );
 }
