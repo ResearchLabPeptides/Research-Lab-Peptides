@@ -36,7 +36,14 @@ export default function GlobalError({
     <main className="mx-auto flex min-h-dvh max-w-xl flex-col items-center justify-center gap-4 px-4 text-center">
       <h1 className="font-display text-2xl font-bold tracking-tight">Something broke on our end</h1>
       <p className="text-sm text-muted-foreground">
-        Your order was not affected. Try again, and if it keeps happening, give us a call.
+        Your order was not affected. Try again, and if it keeps happening, email us at{' '}
+        <a
+          href="mailto:researchlabpeptide@proton.me"
+          className="font-medium underline underline-offset-2"
+        >
+          researchlabpeptide@proton.me
+        </a>
+        .
       </p>
       <Button onClick={reset}>Try again</Button>
 
@@ -52,12 +59,7 @@ export default function GlobalError({
             </p>
           ) : null}
         </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          Staff: add <code className="font-mono">?debug=1</code> to the address, or open the browser
-          console, to see what went wrong.
-        </p>
-      )}
+      ) : null}
     </main>
   );
 }
