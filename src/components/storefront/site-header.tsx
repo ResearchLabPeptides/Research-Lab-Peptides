@@ -44,7 +44,7 @@ export function SiteHeader({
             className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             <PackageSearch className="size-4" aria-hidden />
-            <span className="hidden sm:inline">Track an order</span>
+            <span className="hidden sm:inline">Order status</span>
           </Link>
           <ThemeToggle />
         </div>
