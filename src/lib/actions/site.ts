@@ -184,6 +184,89 @@ export async function updatePage(pageId: string, input: unknown): Promise<SavePa
   };
 }
 
+/**
+ * Moves a page one place up or down in the shop menu.
+ *
+ * Swaps sort_order with the neighbour rather than renumbering the whole list,
+ * so two people reordering at once cannot leave the list half-renumbered. The
+ * neighbour is found among pages that are actually in the menu, because moving
+ * "up" past a page nobody can see would look like the button did nothing.
+ *
+ * Menu order is stored for every page, published or not, so a draft keeps its
+ * place in the running order and lands where you expect when you publish it.
+ */
+export async function movePage(
+  pageId: string,
+  direction: 'up' | 'down',
+): Promise<ActionResult> {
+  await requireStaff('administrator');
+
+  const supabase = await createClient();
+
+  const { data: pages, error: readError } = await supabase
+    .from('site_pages')
+    .select('id, sort_order, title')
+    .eq('show_in_nav', true)
+    .order('sort_order', { ascending: true })
+    .order('title', { ascending: true });
+
+  if (readError) return { ok: false, message: readError.message };
+  if (!pages || pages.length < 2) {
+    return { ok: false, message: 'There is nothing to reorder yet.' };
+  }
+
+  const index = pages.findIndex((page) => page.id === pageId);
+  if (index === -1) {
+    return { ok: false, message: 'That page is not in the menu, so it has no position.' };
+  }
+
+  const target = direction === 'up' ? index - 1 : index + 1;
+  if (target < 0 || target >= pages.length) {
+    return { ok: false, message: `Already ${direction === 'up' ? 'first' : 'last'}.` };
+  }
+
+  const moving = pages[index];
+  const neighbour = pages[target];
+
+  // Both indexes came from findIndex and a bounds check above, so these exist —
+  // but TypeScript cannot see that, and a guard is cheaper than an assertion.
+  if (!moving || !neighbour) {
+    return { ok: false, message: 'That page moved while you were looking at it. Try again.' };
+  }
+
+  // Pages seeded together share sort_order 0, in which case swapping identical
+  // numbers would do nothing visible. Renumber the whole menu from its current
+  // displayed order first, then swap.
+  const needsRenumber = new Set(pages.map((p) => p.sort_order)).size !== pages.length;
+
+  if (needsRenumber) {
+    // for…of over entries rather than an index, so TypeScript can see that the
+    // row exists — indexing an array gives it `T | undefined` under
+    // noUncheckedIndexedAccess.
+    for (const [i, page] of pages.entries()) {
+      await supabase.from('site_pages').update({ sort_order: i * 10 }).eq('id', page.id);
+    }
+    const movingOrder = index * 10;
+    const neighbourOrder = target * 10;
+    await supabase.from('site_pages').update({ sort_order: neighbourOrder }).eq('id', moving.id);
+    await supabase.from('site_pages').update({ sort_order: movingOrder }).eq('id', neighbour.id);
+  } else {
+    await supabase
+      .from('site_pages')
+      .update({ sort_order: neighbour.sort_order })
+      .eq('id', moving.id);
+    await supabase
+      .from('site_pages')
+      .update({ sort_order: moving.sort_order })
+      .eq('id', neighbour.id);
+  }
+
+  revalidatePath('/admin/content');
+  revalidatePath('/', 'layout');
+
+  return { ok: true, message: `"${moving.title}" moved ${direction}.` };
+}
+
 export async function deletePage(pageId: string): Promise<ActionResult> {
   await requireStaff('manager');
 
