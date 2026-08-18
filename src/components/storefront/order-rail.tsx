@@ -220,7 +220,11 @@ export function OrderRail({
 
       <div
         className={cn(
-          'min-h-0 flex-1 px-4',
+          'px-4',
+          // Sizes to its content in checkout so the scrolling region below can
+          // take the remaining height; otherwise both claim flex-1 and the form
+          // is squeezed to a few lines.
+          mode === 'checkout' ? 'max-lg:shrink-0 lg:min-h-0 lg:flex-1' : 'min-h-0 flex-1',
           // Always scrollable on mobile: the rail is a bottom drawer capped at
           // 85dvh, so without an inner scroll everything past the first
           // screenful — payment options, the Place order button — is
@@ -478,7 +482,17 @@ export function OrderRail({
       </div>
 
       {cart.itemCount > 0 ? (
-        <footer className="ticket-rule space-y-3 px-4 py-3">
+        <footer
+          className={cn(
+            'ticket-rule space-y-3 px-4 py-3',
+            // On a phone in checkout the summary, coupon and payment choice
+            // scroll along with the address form rather than sitting in a fixed
+            // block below it — fixed, they took most of the screen and squeezed
+            // the fields into a window a couple of lines tall. The Place order
+            // button is pinned separately, so it stays reachable.
+            mode === 'checkout' && 'max-lg:min-h-0 max-lg:flex-1 max-lg:overflow-y-auto',
+          )}
+        >
           <dl className="space-y-1 text-sm">
             <Row label="Subtotal" value={formatMoney(cart.subtotalCents)} />
             {priced.cryptoCents > 0 ? (
@@ -584,7 +598,16 @@ export function OrderRail({
               {text(content, 'cart.checkout_button', 'Continue to shipping')}
             </Button>
           ) : (
-            <div className="space-y-2">
+            <div
+              className={cn(
+                'space-y-2',
+                // Sticks to the bottom of the scrolling area on a phone, so the
+                // button is always reachable however far down the summary you
+                // have scrolled. The backdrop keeps the text above from showing
+                // through as it passes underneath.
+                'max-lg:sticky max-lg:bottom-0 max-lg:-mx-4 max-lg:bg-card max-lg:px-4 max-lg:pb-1 max-lg:pt-2',
+              )}
+            >
               <Button
                 type="submit"
                 form="checkout-form"
@@ -643,8 +666,20 @@ export function OrderRail({
                 onClick={() => setOpen(false)}
                 className="fixed inset-0 -z-10 bg-black/40"
               />
-              <div className="max-h-[85dvh] overflow-hidden rounded-t-2xl border-t border-border bg-card shadow-2xl">
-                <div className="flex h-[85dvh] flex-col">{ticket}</div>
+              <div
+                className={cn(
+                  'overflow-hidden rounded-t-2xl border-t border-border bg-card shadow-2xl',
+                  // Nearly the whole screen while filling in an address; a
+                  // shorter sheet for the item list, where seeing the shop
+                  // behind it is useful.
+                  mode === 'checkout' ? 'max-h-[96dvh]' : 'max-h-[85dvh]',
+                )}
+              >
+                <div
+                  className={cn('flex flex-col', mode === 'checkout' ? 'h-[96dvh]' : 'h-[85dvh]')}
+                >
+                  {ticket}
+                </div>
               </div>
             </>
           ) : (
