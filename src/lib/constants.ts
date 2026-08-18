@@ -30,7 +30,10 @@ export const ORDER_STATUS_META: Record<
   },
   preparing: { label: 'Preparing', customerLabel: 'Packing your order', tone: 'blue', step: 3 },
   out_for_delivery: {
-    label: 'Out for delivery',
+    // Display only. The stored value stays out_for_delivery — renaming an enum
+    // that is recorded against every past order is a migration, not a wording
+    // change, and nobody sees the stored value.
+    label: 'Shipped',
     customerLabel: 'On the way to you',
     tone: 'blue',
     step: 4,
