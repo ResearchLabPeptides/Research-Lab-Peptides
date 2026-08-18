@@ -455,8 +455,11 @@ function SortButton({
     <button
       type="button"
       onClick={() => onSort(sortKey)}
-      aria-label={`Sort by ${label}`}
-      aria-sort={active ? (sort.desc ? 'descending' : 'ascending') : 'none'}
+      aria-label={
+        active
+          ? `${label}, sorted ${sort.desc ? 'high to low' : 'low to high'}. Activate to reverse.`
+          : `Sort by ${label}`
+      }
       className={cn(
         'group inline-flex min-h-8 items-center gap-1 font-medium uppercase tracking-wider transition-colors hover:text-foreground',
         active && 'text-foreground',
