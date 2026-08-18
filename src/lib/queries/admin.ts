@@ -38,8 +38,10 @@ export async function getDashboard() {
     supabase
       .from('orders')
       .select(
-        'id, order_number, status, payment_status, payment_method, crypto_discount_cents, ' +
-          'customer_name, total_cents, placed_at, delivery_zone_name',
+        // One string literal, not a concatenation: supabase-js infers the row
+        // type by reading this at compile time, and joining two strings defeats
+        // that — the result comes back typed as an error instead of a row.
+        'id, order_number, status, payment_status, payment_method, crypto_discount_cents, customer_name, total_cents, placed_at, delivery_zone_name',
       )
       .order('placed_at', { ascending: false })
       .limit(8),
