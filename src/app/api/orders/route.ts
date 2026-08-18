@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { customer, items, couponCode } = parsed.data;
+  const { customer, items, couponCode, paymentMethod } = parsed.data;
 
   // Keyed on the email as well, so rotating addresses does not reset the count.
   const byEmail = await checkRateLimit(
@@ -83,6 +83,12 @@ export async function POST(request: Request) {
       },
       acknowledgements: gate?.keys ?? [],
       coupon_code: couponCode,
+      // Was missing entirely: the schema validated it and the route then
+      // dropped it, so place_order() fell back to its 'interac' default and
+      // every USDC order was recorded — and given payment instructions — as an
+      // e-Transfer. The customer got the wrong instructions and staff had no
+      // way to tell the two apart.
+      payment_method: paymentMethod,
       items: [...merged].map(([product_id, quantity]) => ({ product_id, quantity })),
     },
   });
