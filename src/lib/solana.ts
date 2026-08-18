@@ -38,7 +38,9 @@ export function decodeBase58(input: string): Uint8Array | null {
 
     let carry = value;
     for (let i = 0; i < bytes.length; i += 1) {
-      carry += bytes[i] * 58;
+      // `?? 0` only to satisfy noUncheckedIndexedAccess: i is bounded by
+      // bytes.length, so the element always exists.
+      carry += (bytes[i] ?? 0) * 58;
       bytes[i] = carry & 0xff;
       carry >>= 8;
     }
@@ -98,7 +100,7 @@ export function isOnCurve(bytes: Uint8Array): boolean {
   // Little-endian, with the top bit holding the sign of x rather than data.
   let y = 0n;
   for (let i = 31; i >= 0; i -= 1) {
-    y = (y << 8n) | BigInt(bytes[i]);
+    y = (y << 8n) | BigInt(bytes[i] ?? 0);
   }
   const sign = (y >> 255n) & 1n;
   y &= (1n << 255n) - 1n;
