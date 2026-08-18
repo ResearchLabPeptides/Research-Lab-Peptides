@@ -7,11 +7,17 @@ const supabaseHost = process.env.NEXT_PUBLIC_SUPABASE_URL
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
+
+  /**
+   * The staff manual lives outside `public/` so it is not served to anyone who
+   * knows the URL — /admin/manual reads it after checking the session instead.
+   *
+   * Files outside `public/` are not deployed unless the build is told they are
+   * needed. Without this the route works locally and returns 404 in production,
+   * which is a confusing way to find out.
+   */
+  outputFileTracingIncludes: {
+    '/admin/manual': ['./private/user-manual.pdf'],
   },
   images: {
     formats: ['image/avif', 'image/webp'],
