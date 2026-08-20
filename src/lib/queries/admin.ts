@@ -69,6 +69,14 @@ export async function getDashboard() {
 export interface OrderFilters {
   search?: string;
   status?: OrderStatus | 'all';
+  /** How the customer paid — which inbox or wallet the payment will be in. */
+  method?: 'interac' | 'usdc_solana' | 'all';
+  /** Which column to order by. Sorting happens in the database, not the
+   *  browser, because the list is paginated: sorting one page of 25 would
+   *  reorder that page and leave the rest untouched, which is worse than not
+   *  sorting at all. */
+  sort?: 'placed_at' | 'order_number' | 'customer_name' | 'total_cents' | 'status';
+  desc?: boolean;
   page?: number;
   pageSize?: number;
 }
@@ -88,10 +96,14 @@ export async function getOrders(filters: OrderFilters) {
        total_cents, amount_paid_cents, placed_at, estimated_delivery_at`,
       { count: 'exact' },
     )
-    .order('placed_at', { ascending: false })
+    .order(filters.sort ?? 'placed_at', { ascending: filters.desc === false })
     .range(from, from + pageSize - 1);
 
   if (filters.status && filters.status !== 'all') query = query.eq('status', filters.status);
+
+  if (filters.method && filters.method !== 'all') {
+    query = query.eq('payment_method', filters.method);
+  }
 
   if (filters.search?.trim()) {
     const term = filters.search.trim();
@@ -146,6 +158,20 @@ export async function getOrderDetail(orderId: string) {
       inventory_deducted: boolean;
       paid_at: string | null;
       delivered_at: string | null;
+
+      // The select is `*`, so these come back already — they were simply
+      // missing from the hand-written type, which is why the order detail page
+      // could not read them.
+      discount_cents: number;
+      coupon_code: string;
+      coupon_label: string;
+      crypto_discount_cents: number;
+      usdc_address: string;
+      usdc_amount_micros: number;
+      usdc_rate_cad: number;
+      usdc_rate_source: string;
+      usdc_received_micros: number;
+      usdc_confirmed_at: string | null;
     },
     items: (items.data ?? []) as {
       id: string;
