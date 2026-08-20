@@ -1,336 +1,299 @@
 import Link from 'next/link';
-import { ArrowDown, ArrowUp, Receipt } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
+import { notFound } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 import { OrderStatusBadge, PaymentStatusBadge } from '@/components/admin/status-badge';
-import { OrderFilterBar } from '@/components/admin/order-filter-bar';
-import { requireStaff } from '@/lib/auth';
-import { getOrders } from '@/lib/queries/admin';
-import { formatDateTime, formatMoney } from '@/lib/format';
-import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
-import type { OrderStatus, PaymentMethod } from '@/lib/types';
+import {
+  ChangeStatusPanel,
+  RecordPaymentPanel,
+  TrackingNotePanel,
+} from '@/components/admin/order-actions';
+import { hasMinRole, requireStaff } from '@/lib/auth';
+import { getOrderDetail } from '@/lib/queries/admin';
+import { ORDER_STATUS_META } from '@/lib/constants';
+import { formatDateTime, formatMoney, formatPostalCode } from '@/lib/format';
 
-export const metadata = { title: 'Orders' };
 export const dynamic = 'force-dynamic';
 
-export default async function OrdersPage({
-  searchParams,
-}: {
-  searchParams: Promise<{
-    q?: string;
-    status?: string;
-    method?: string;
-    sort?: string;
-    desc?: string;
-    page?: string;
-  }>;
-}) {
-  await requireStaff();
-  const params = await searchParams;
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const detail = await getOrderDetail((await params).id);
+  return { title: detail ? `Order ${detail.order.order_number}` : 'Order' };
+}
 
-  // Only the columns worth sorting by are accepted. Anything else falls back to
-  // newest first rather than being passed to the database, so a hand-edited
-  // address cannot ask it to order by an arbitrary column.
-  const SORTABLE = ['placed_at', 'order_number', 'customer_name', 'total_cents', 'status'] as const;
-  const sort = SORTABLE.includes(params.sort as (typeof SORTABLE)[number])
-    ? (params.sort as (typeof SORTABLE)[number])
-    : 'placed_at';
+export default async function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const profile = await requireStaff();
+  const detail = await getOrderDetail((await params).id);
+  if (!detail) notFound();
 
-  const { orders, total, page, pageCount } = await getOrders({
-    search: params.q,
-    status: (params.status as OrderStatus | 'all' | undefined) ?? 'all',
-    method: (params.method as 'interac' | 'usdc_solana' | 'all' | undefined) ?? 'all',
-    sort,
-    desc: params.desc !== 'asc',
-    page: Number(params.page) || 1,
-  });
+  const { order, items, history, payments } = detail;
+  const canEdit = hasMinRole(profile.role, 'employee');
+  // discount_cents is every discount added together; the crypto part is broken
+  // back out so each can be named.
+  const cryptoCents = Number(order.crypto_discount_cents ?? 0);
+  const couponCents = Math.max(0, Number(order.discount_cents ?? 0) - cryptoCents);
 
-  // Every link carries every filter. Dropping one here is how paging silently
-  // clears the search box.
-  const buildHref = (changes: Record<string, string | undefined>) => {
-    const search = new URLSearchParams();
-    const merged = {
-      q: params.q,
-      status: params.status,
-      method: params.method,
-      sort: params.sort,
-      desc: params.desc,
-      page: params.page,
-      ...changes,
-    };
-    for (const [key, value] of Object.entries(merged)) {
-      if (value) search.set(key, value);
-    }
-    const query = search.toString();
-    return query ? `/admin/orders?${query}` : '/admin/orders';
-  };
-
-  /** A column header that sorts. Clicking the active column reverses it. */
-  const sortHref = (column: (typeof SORTABLE)[number]) =>
-    buildHref({
-      sort: column,
-      desc: sort === column && params.desc !== 'asc' ? 'asc' : undefined,
-      page: undefined,
-    });
+  const balanceCents = Math.max(0, order.total_cents - order.amount_paid_cents);
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="font-display text-2xl font-bold tracking-tight">Orders</h1>
-        <p className="tabular text-sm text-muted-foreground">
-          {total} {total === 1 ? 'order' : 'orders'}
-        </p>
+      <Link
+        href="/admin/orders"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="size-4" aria-hidden />
+        All orders
+      </Link>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="font-mono text-2xl font-bold tracking-tight">{order.order_number}</h1>
+        <OrderStatusBadge status={order.status} />
+        <PaymentStatusBadge status={order.payment_status} />
+        {order.inventory_reserved ? (
+          <span className="text-xs text-muted-foreground">Stock held, not yet deducted</span>
+        ) : null}
       </div>
 
-      <OrderFilterBar
-        defaultQuery={params.q ?? ''}
-        defaultStatus={params.status ?? 'all'}
-        defaultMethod={params.method ?? 'all'}
-      />
-
-      {orders.length === 0 ? (
-        <EmptyState
-          icon={Receipt}
-          title="No orders match"
-          description="Try a different search, or clear the status filter to see everything."
-        />
-      ) : (
-        <>
-          {/* Table on desktop, stacked cards on mobile — the same data, laid out
-              for the device rather than horizontally scrolled. */}
-          <div className="hidden overflow-hidden rounded-xl border border-border md:block">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/60 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    <SortLink
-                      label="Order"
-                      href={sortHref('order_number')}
-                      active={sort === 'order_number'}
-                      desc={params.desc !== 'asc'}
-                    />
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    <SortLink
-                      label="Customer"
-                      href={sortHref('customer_name')}
-                      active={sort === 'customer_name'}
-                      desc={params.desc !== 'asc'}
-                    />
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Zone
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    <SortLink
-                      label="Placed"
-                      href={sortHref('placed_at')}
-                      active={sort === 'placed_at'}
-                      desc={params.desc !== 'asc'}
-                    />
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    <SortLink
-                      label="Status"
-                      href={sortHref('status')}
-                      active={sort === 'status'}
-                      desc={params.desc !== 'asc'}
-                    />
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Payment
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 text-right font-medium">
-                    <SortLink
-                      label="Total"
-                      href={sortHref('total_cents')}
-                      active={sort === 'total_cents'}
-                      desc={params.desc !== 'asc'}
-                    />
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {orders.map((order) => (
-                  <tr key={order.id} className="transition-colors hover:bg-muted/40">
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/admin/orders/${order.id}`}
-                        className="font-mono font-medium text-primary underline-offset-2 hover:underline"
-                      >
-                        {order.order_number}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium">{order.customer_name}</p>
-                      <p className="text-xs text-muted-foreground">{order.customer_email}</p>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{order.delivery_zone_name}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {formatDateTime(order.placed_at)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <OrderStatusBadge status={order.status} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <PaymentStatusBadge status={order.payment_status} />
-                        <PaymentMethodBadge
-                          method={order.payment_method}
-                          cryptoDiscountCents={order.crypto_discount_cents}
-                        />
-                      </div>
-                    </td>
-                    <td className="tabular px-4 py-3 text-right font-semibold">
-                      {formatMoney(order.total_cents)}
-                      {order.crypto_discount_cents > 0 ? (
-                        <span className="block text-xs font-normal text-muted-foreground">
-                          after -{formatMoney(order.crypto_discount_cents)} crypto
-                        </span>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <ul className="space-y-2 md:hidden">
-            {orders.map((order) => (
-              <li key={order.id}>
-                <Link
-                  href={`/admin/orders/${order.id}`}
-                  className="block rounded-xl border border-border bg-card p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="space-y-4 lg:col-span-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Items</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="divide-y divide-border">
+                {items.map((item) => (
+                  <li key={item.id} className="flex items-baseline justify-between gap-4 py-2.5">
                     <div className="min-w-0">
-                      <p className="font-mono text-sm font-semibold">{order.order_number}</p>
-                      <p className="truncate text-sm">{order.customer_name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDateTime(order.placed_at)}
+                      <p className="text-sm font-medium">
+                        <span className="tabular">{item.quantity}&times;</span> {item.name}
+                      </p>
+                      <p className="font-mono text-xs text-muted-foreground">
+                        {item.sku} · {formatMoney(item.unit_price_cents)} / {item.unit}
                       </p>
                     </div>
-                    <p className="tabular font-semibold">
-                      {formatMoney(order.total_cents)}
-                      {order.crypto_discount_cents > 0 ? (
-                        <span className="block text-xs font-normal text-muted-foreground">
-                          after -{formatMoney(order.crypto_discount_cents)} crypto
-                        </span>
-                      ) : null}
+                    <p className="tabular text-sm font-semibold">
+                      {formatMoney(item.line_total_cents)}
                     </p>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    <OrderStatusBadge status={order.status} />
-                    <PaymentStatusBadge status={order.payment_status} />
-                    <PaymentMethodBadge
-                      method={order.payment_method}
-                      cryptoDiscountCents={order.crypto_discount_cents}
-                    />
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
+                  </li>
+                ))}
+              </ul>
 
-          {pageCount > 1 ? (
-            <nav className="flex items-center justify-between" aria-label="Pagination">
-              <Button variant="outline" size="sm" disabled={page <= 1} asChild={page > 1}>
-                {page > 1 ? (
-                  <Link href={buildHref({ page: String(page - 1) })}>Previous</Link>
+              <Separator className="my-3" />
+
+              <dl className="space-y-1 text-sm">
+                <Row label="Subtotal" value={formatMoney(order.subtotal_cents)} />
+
+                {/* Discounts were missing here entirely, so an order's total did
+                    not reconcile against its subtotal on this page and there was
+                    no sign of why. Coupon and crypto are listed separately: they
+                    are different things and staff need to see which applied. */}
+                {couponCents > 0 ? (
+                  <Row
+                    label={
+                      order.coupon_code
+                        ? `${order.coupon_code} — ${order.coupon_label}`
+                        : 'Discount'
+                    }
+                    value={`-${formatMoney(couponCents)}`}
+                  />
+                ) : null}
+                {cryptoCents > 0 ? (
+                  <Row label="Crypto payment discount" value={`-${formatMoney(cryptoCents)}`} />
+                ) : null}
+                <Row
+                  label={`Delivery — ${order.delivery_zone_name}`}
+                  value={formatMoney(order.delivery_fee_cents)}
+                />
+                <Row label="Tax" value={formatMoney(order.tax_cents)} />
+                <Row label="Total" value={formatMoney(order.total_cents)} emphasis />
+                <Row label="Paid" value={formatMoney(order.amount_paid_cents)} />
+                {balanceCents > 0 ? (
+                  <Row label="Balance owing" value={formatMoney(balanceCents)} warning />
+                ) : null}
+              </dl>
+            </CardContent>
+          </Card>
+
+          {/* Everything needed to confirm a USDC payment, in one place: the
+              address to look up in the wallet, the exact figure to expect, and
+              the rate it was quoted at so a disputed amount can be explained.
+              Without this, staff had the order but no way to tell which payment
+              belonged to it. */}
+          {order.payment_method === 'usdc_solana' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>USDC payment</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                    Expecting
+                  </p>
+                  <p className="tabular font-display text-xl font-bold">
+                    {(Number(order.usdc_amount_micros ?? 0) / 1_000_000).toFixed(2)} USDC
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Quoted at 1 USDC = {Number(order.usdc_rate_cad ?? 0).toFixed(4)} CAD
+                    {order.usdc_rate_source ? ` from ${order.usdc_rate_source}` : ''}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                    Search this address in your wallet
+                  </p>
+                  <p className="mt-1 break-all rounded-md bg-muted px-3 py-2 font-mono text-xs">
+                    {order.usdc_address}
+                  </p>
+                </div>
+
+                {Number(order.usdc_received_micros ?? 0) > 0 ? (
+                  <p className="rounded-md bg-accent px-3 py-2 text-accent-foreground">
+                    {(Number(order.usdc_received_micros) / 1_000_000).toFixed(2)} USDC received
+                    {order.usdc_confirmed_at
+                      ? ` — confirmed ${formatDateTime(order.usdc_confirmed_at)}`
+                      : ''}
+                    .
+                  </p>
                 ) : (
-                  <span>Previous</span>
+                  <p className="text-xs text-muted-foreground">
+                    Nothing recorded yet. Check the address above in your wallet, then confirm the
+                    payment below.
+                  </p>
                 )}
-              </Button>
-              <p className="tabular text-sm text-muted-foreground">
-                Page {page} of {pageCount}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= pageCount}
-                asChild={page < pageCount}
-              >
-                {page < pageCount ? (
-                  <Link href={buildHref({ page: String(page + 1) })}>Next</Link>
-                ) : (
-                  <span>Next</span>
-                )}
-              </Button>
-            </nav>
+              </CardContent>
+            </Card>
           ) : null}
-        </>
-      )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Customer</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1 text-sm">
+                <p className="font-medium">{order.customer_name}</p>
+                <p>
+                  <a
+                    href={`mailto:${order.customer_email}`}
+                    className="text-primary hover:underline"
+                  >
+                    {order.customer_email}
+                  </a>
+                </p>
+                <p>
+                  <a href={`tel:${order.customer_phone}`} className="text-primary hover:underline">
+                    {order.customer_phone}
+                  </a>
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Shipping to</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <address className="not-italic text-muted-foreground">
+                  {order.address_line1}
+                  {order.address_line2 ? `, ${order.address_line2}` : ''}
+                  <br />
+                  {order.city}, {order.province} {formatPostalCode(order.postal_code)}
+                </address>
+                {order.delivery_notes ? (
+                  <p className="rounded-md bg-muted px-3 py-2 text-xs">
+                    <span className="font-medium">Instructions: </span>
+                    {order.delivery_notes}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>History</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ol className="space-y-3">
+                {history.map((entry) => (
+                  <li key={entry.id} className="flex gap-3 text-sm">
+                    <span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" aria-hidden />
+                    <div>
+                      <p className="font-medium">{ORDER_STATUS_META[entry.to_status].label}</p>
+                      {entry.note ? <p className="text-muted-foreground">{entry.note}</p> : null}
+                      <p className="text-xs text-muted-foreground">
+                        {formatDateTime(entry.created_at)}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+
+              {payments.length > 0 ? (
+                <>
+                  <Separator className="my-4" />
+                  <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Payments
+                  </h3>
+                  <ul className="space-y-1.5 text-sm">
+                    {payments.map((payment) => (
+                      <li key={payment.id} className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">
+                          {formatDateTime(payment.received_at)}
+                          {payment.reference ? ` · ${payment.reference}` : ''}
+                        </span>
+                        <span className="tabular font-medium">
+                          {formatMoney(payment.amount_cents)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="space-y-4">
+          {balanceCents > 0 ? (
+            <RecordPaymentPanel orderId={order.id} balanceCents={balanceCents} canEdit={canEdit} />
+          ) : null}
+          <ChangeStatusPanel orderId={order.id} currentStatus={order.status} canEdit={canEdit} />
+          <TrackingNotePanel
+            orderId={order.id}
+            initialNote={order.tracking_notes}
+            canEdit={canEdit}
+          />
+        </div>
+      </div>
     </div>
   );
 }
 
-/**
- * Which way an order is being paid, and whether its price already reflects the
- * crypto discount.
- *
- * Both matter at a glance in the list: a USDC order needs checking against a
- * wallet rather than an inbox, and a discounted one is deliberately worth less
- * than the same basket paid by e-Transfer — without saying so, the total looks
- * like an error.
- */
-function PaymentMethodBadge({
-  method,
-  cryptoDiscountCents,
-}: {
-  method: PaymentMethod;
-  cryptoDiscountCents: number;
-}) {
-  return (
-    <span className="inline-flex flex-wrap items-center gap-1.5">
-      <Badge tone={method === 'usdc_solana' ? 'blue' : 'slate'}>
-        {method === 'usdc_solana' ? 'USDC' : 'e-Transfer'}
-      </Badge>
-      {cryptoDiscountCents > 0 ? <Badge tone="green">Crypto discount</Badge> : null}
-    </span>
-  );
-}
-
-/**
- * A sortable column header.
- *
- * A link rather than a button: sorting is part of the address, so the sorted
- * view can be bookmarked, shared, and survives a page reload. The arrow shows
- * only on the active column — one on every header makes it impossible to see
- * which is in charge.
- */
-function SortLink({
+function Row({
   label,
-  href,
-  active,
-  desc,
+  value,
+  emphasis,
+  warning,
 }: {
   label: string;
-  href: string;
-  active: boolean;
-  desc: boolean;
+  value: string;
+  emphasis?: boolean;
+  warning?: boolean;
 }) {
   return (
-    <Link
-      href={href}
-      className={cn(
-        'inline-flex min-h-8 items-center gap-1 transition-colors hover:text-foreground',
-        active && 'text-foreground',
-      )}
-      aria-label={
-        active
-          ? `${label}, sorted ${desc ? 'descending' : 'ascending'}. Activate to reverse.`
-          : `Sort by ${label}`
-      }
-    >
-      {label}
-      {active ? (
-        desc ? (
-          <ArrowDown className="size-3.5" aria-hidden />
-        ) : (
-          <ArrowUp className="size-3.5" aria-hidden />
-        )
-      ) : null}
-    </Link>
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className={emphasis ? 'font-medium' : 'text-muted-foreground'}>{label}</dt>
+      <dd
+        className={[
+          'tabular font-medium',
+          emphasis ? 'font-display text-lg font-semibold' : '',
+          warning ? 'text-[var(--warning)]' : '',
+        ].join(' ')}
+      >
+        {value}
+      </dd>
+    </div>
   );
 }
