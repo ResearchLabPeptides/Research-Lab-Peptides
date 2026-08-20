@@ -28,6 +28,11 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
   const { order, items, history, payments } = detail;
   const canEdit = hasMinRole(profile.role, 'employee');
+  // discount_cents is every discount added together; the crypto part is broken
+  // back out so each can be named.
+  const cryptoCents = Number(order.crypto_discount_cents ?? 0);
+  const couponCents = Math.max(0, Number(order.discount_cents ?? 0) - cryptoCents);
+
   const balanceCents = Math.max(0, order.total_cents - order.amount_paid_cents);
 
   return (
@@ -78,6 +83,24 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
               <dl className="space-y-1 text-sm">
                 <Row label="Subtotal" value={formatMoney(order.subtotal_cents)} />
+
+                {/* Discounts were missing here entirely, so an order's total did
+                    not reconcile against its subtotal on this page and there was
+                    no sign of why. Coupon and crypto are listed separately: they
+                    are different things and staff need to see which applied. */}
+                {couponCents > 0 ? (
+                  <Row
+                    label={
+                      order.coupon_code
+                        ? `${order.coupon_code} — ${order.coupon_label}`
+                        : 'Discount'
+                    }
+                    value={`-${formatMoney(couponCents)}`}
+                  />
+                ) : null}
+                {cryptoCents > 0 ? (
+                  <Row label="Crypto payment discount" value={`-${formatMoney(cryptoCents)}`} />
+                ) : null}
                 <Row
                   label={`Delivery — ${order.delivery_zone_name}`}
                   value={formatMoney(order.delivery_fee_cents)}
@@ -91,6 +114,57 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               </dl>
             </CardContent>
           </Card>
+
+          {/* Everything needed to confirm a USDC payment, in one place: the
+              address to look up in the wallet, the exact figure to expect, and
+              the rate it was quoted at so a disputed amount can be explained.
+              Without this, staff had the order but no way to tell which payment
+              belonged to it. */}
+          {order.payment_method === 'usdc_solana' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>USDC payment</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                    Expecting
+                  </p>
+                  <p className="tabular font-display text-xl font-bold">
+                    {(Number(order.usdc_amount_micros ?? 0) / 1_000_000).toFixed(2)} USDC
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Quoted at 1 USDC = {Number(order.usdc_rate_cad ?? 0).toFixed(4)} CAD
+                    {order.usdc_rate_source ? ` from ${order.usdc_rate_source}` : ''}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                    Search this address in your wallet
+                  </p>
+                  <p className="mt-1 break-all rounded-md bg-muted px-3 py-2 font-mono text-xs">
+                    {order.usdc_address}
+                  </p>
+                </div>
+
+                {Number(order.usdc_received_micros ?? 0) > 0 ? (
+                  <p className="rounded-md bg-accent px-3 py-2 text-accent-foreground">
+                    {(Number(order.usdc_received_micros) / 1_000_000).toFixed(2)} USDC received
+                    {order.usdc_confirmed_at
+                      ? ` — confirmed ${formatDateTime(order.usdc_confirmed_at)}`
+                      : ''}
+                    .
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Nothing recorded yet. Check the address above in your wallet, then confirm the
+                    payment below.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Card>
